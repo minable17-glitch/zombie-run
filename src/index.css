@@ -1,0 +1,405 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: #0b0f0d;
+  color: #eef3ee;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans KR', sans-serif;
+  overflow: hidden;
+}
+
+.zr-screen {
+  position: relative;
+  height: 100dvh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #0b0f0d;
+}
+
+/* ── 시작 / 결과 화면 ── */
+.zr-start {
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  padding-top: calc(24px + env(safe-area-inset-top));
+  padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  overflow-y: auto;
+}
+
+.zr-start-card {
+  max-width: 420px;
+  width: 100%;
+  background: #121815;
+  border: 1px solid #223028;
+  border-radius: 20px;
+  padding: 28px 24px;
+  text-align: center;
+}
+
+.zr-title {
+  font-size: 26px;
+  margin: 0 0 12px;
+}
+
+.zr-subtitle {
+  color: #9db3a6;
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0 0 18px;
+}
+
+.zr-rules {
+  text-align: left;
+  color: #cfe0d6;
+  font-size: 14px;
+  line-height: 1.9;
+  margin: 0 0 22px;
+  padding-left: 20px;
+}
+
+.zr-error {
+  color: #ff8a80;
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+
+.zr-pace-label {
+  color: #9db3a6;
+  font-size: 12px;
+  text-align: left;
+  margin: 0 0 8px;
+}
+
+.zr-pace-picker {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.zr-pace-picker-2col {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.zr-pace-hint {
+  color: #9db3a6;
+  font-size: 11px;
+  text-align: left;
+  margin: -8px 0 14px;
+}
+
+.zr-pace-btn {
+  border: 1px solid #34443b;
+  background: transparent;
+  color: #cfe0d6;
+  border-radius: 10px;
+  padding: 10px 4px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.zr-pace-btn-on {
+  border-color: #ef5350;
+  background: rgba(239, 83, 80, 0.18);
+  color: #fff;
+}
+
+.zr-btn {
+  display: block;
+  width: 100%;
+  border: none;
+  border-radius: 14px;
+  padding: 14px 18px;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-top: 10px;
+}
+
+.zr-btn-primary {
+  background: linear-gradient(135deg, #ef5350, #b71c1c);
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(239, 83, 80, 0.35);
+}
+
+.zr-btn-ghost {
+  background: transparent;
+  border: 1px solid #34443b;
+  color: #cfe0d6;
+}
+
+.zr-btn-small {
+  width: auto;
+  padding: 10px 16px;
+  font-size: 14px;
+  margin: 0;
+}
+
+.zr-result-grid {
+  display: flex;
+  justify-content: space-around;
+  margin: 18px 0 22px;
+}
+
+.zr-result-num {
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.zr-result-label {
+  font-size: 12px;
+  color: #9db3a6;
+  margin-top: 4px;
+}
+
+/* ── 인게임 HUD ── */
+.zr-hud-top {
+  position: absolute;
+  top: calc(10px + env(safe-area-inset-top));
+  left: 10px;
+  right: 10px;
+  z-index: 500;
+  display: flex;
+  justify-content: space-between;
+  background: rgba(10, 14, 12, 0.78);
+  border: 1px solid #223028;
+  border-radius: 14px;
+  padding: 10px 14px;
+  backdrop-filter: blur(6px);
+}
+
+.zr-hud-stat {
+  text-align: center;
+  flex: 1;
+}
+
+.zr-hud-value {
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.zr-hud-label {
+  font-size: 10px;
+  color: #9db3a6;
+  margin-top: 2px;
+}
+
+.zr-map {
+  flex: 1;
+  width: 100%;
+}
+
+.zr-hud-side {
+  position: absolute;
+  top: 90px;
+  right: 10px;
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.zr-badge {
+  background: rgba(10, 14, 12, 0.82);
+  border: 1px solid #223028;
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-size: 14px;
+  font-weight: 700;
+  min-width: 52px;
+  text-align: center;
+}
+
+.zr-hearts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: rgba(10, 14, 12, 0.82);
+  border: 1px solid #223028;
+  border-radius: 12px;
+  padding: 6px;
+}
+
+.zr-heart {
+  font-size: 13px;
+  opacity: 0.25;
+  filter: grayscale(1);
+}
+
+.zr-heart-on {
+  opacity: 1;
+  filter: none;
+}
+
+.zr-gauge {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 2px solid #34443b;
+  background: rgba(10, 14, 12, 0.82);
+  color: #cfe0d6;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: not-allowed;
+}
+
+.zr-gauge-ready {
+  border-color: #ffd54f;
+  color: #ffd54f;
+  background: rgba(120, 90, 0, 0.35);
+  cursor: pointer;
+  animation: zr-pulse 1s infinite;
+}
+
+@keyframes zr-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 213, 79, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(255, 213, 79, 0);
+  }
+}
+
+.zr-hud-bottom {
+  position: absolute;
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  left: 10px;
+  right: 10px;
+  z-index: 500;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.zr-round-btn {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 1px solid #223028;
+  background: rgba(10, 14, 12, 0.82);
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.zr-pace-bar {
+  position: absolute;
+  top: calc(76px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(10, 14, 12, 0.82);
+  border: 1px solid #223028;
+  color: #cfe0d6;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.zr-pace-bar-behind {
+  border-color: #ef5350;
+  color: #ffcdd2;
+}
+
+.zr-pace-vs {
+  opacity: 0.6;
+  font-weight: 500;
+  margin: 0 2px;
+}
+
+.zr-banner-stack {
+  position: absolute;
+  top: calc(118px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 500;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.zr-banner {
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.zr-banner-blue {
+  background: rgba(33, 150, 243, 0.25);
+  border: 1px solid #64b5f6;
+  color: #bbdefb;
+}
+
+.zr-banner-red {
+  background: rgba(183, 28, 28, 0.3);
+  border: 1px solid #ef5350;
+  color: #ffcdd2;
+}
+
+.zr-toast {
+  position: absolute;
+  bottom: 76px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 500;
+  background: rgba(18, 24, 21, 0.95);
+  border: 1px solid #34443b;
+  padding: 10px 18px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  max-width: 90vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── leaflet 마커 이모지 ── */
+.zr-marker {
+  font-size: 22px;
+  text-align: center;
+  line-height: 1;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.6));
+}
+
+.zr-marker-player {
+  font-size: 26px;
+}
+
+.zr-marker-zombie {
+  font-size: 24px;
+  animation: zr-shake 0.6s infinite;
+}
+
+@keyframes zr-shake {
+  0%,
+  100% {
+    transform: rotate(-4deg);
+  }
+  50% {
+    transform: rotate(4deg);
+  }
+}
+
+.zr-marker-pickup {
+  font-size: 20px;
+}
