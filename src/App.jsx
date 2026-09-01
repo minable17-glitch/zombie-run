@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import GameMap from './GameMap.jsx'
+import AdminRouteEditor from './AdminRouteEditor.jsx'
 import {
   advanceAlongPath,
   bearingTo,
@@ -10,6 +11,7 @@ import {
   randomPointNear,
 } from './lib/geo.js'
 import { fetchWalkingPath } from './lib/routing.js'
+import ZOMBIE_MAPS from './data/zombieMaps.json'
 
 // OpenRouteService 키가 있으면 좀비가 실제 도로/인도 경로를 따라 쫓아오고,
 // 없으면(또는 요청 실패 시) 자동으로 직선 이동으로 대체됨
@@ -57,6 +59,11 @@ const HEADING_MIN_STEP_M = 15 // 이만큼 움직여야 "달리는 방향"을 �
 const ZOMBIE_SPAWN_SPREAD_DEG = 55 // 좀비는 "뒤쪽" 기준 ±이 각도 안에서 스폰
 const PICKUP_SPAWN_SPREAD_DEG = 40 // 아이템은 "앞쪽" 기준 ±이 각도 안에서 스폰
 
+// 관리자가 미리 그려둔 좀비 순찰 경로 (src/data/zombieMaps.json). 시작 위치가 그 지도의
+// center/radius 안이면 동적 스폰 대신 이 경로를 그대로 씀
+const AGGRO_RADIUS_M = 40 // 순찰 중인 좀비가 이 거리 안의 플레이어를 발견하면 추격 시작
+const LEASH_DISTANCE_M = 100 // 추격 시작 지점에서 플레이어가 이만큼 멀어지면 좀비가 추격을 포기하고 순찰로 복귀
+
 function formatTime(totalSec) {
   const m = Math.floor(totalSec / 60)
   const s = totalSec % 60
@@ -103,6 +110,7 @@ function makeInitialGame() {
     outsideAreaHeartsLost: 0, // 그동안 이미 깎은 생명 수 (중복 차감 방지용)
     headingDeg: null, // 지금 달리는 방향 (충분히 움직이기 전까진 null)
     headingAnchor: null, // 방향 계산 기준점
+    presetMap: null, // 관리자가 미리 만들어둔 좀비 지도 (해당되면)
   }
 }
 
@@ -114,11 +122,83 @@ function pickSpawnPoint(game, minM, maxM, { behind } = {}) {
   return randomPointInDirection(game.playerPos.lat, game.playerPos.lon, minM, maxM, centerBearing, spread)
 }
 
+// 순찰 좀비를 경로를 따라 speed미터만큼 이동시킴 (끝에 닿으면 반대 방향으로 되돌아가며 왕복)
+function stepPatrol(z) {
+  let { lat, lon, patrolIndex, patrolDir } = z
+  const route = z.patrolRoute
+  if (route.length < 2) return { lat, lon, patrolIndex, patrolDir }
+  let remaining = z.speed
+  let guard = 0
+  while (remaining > 0.01 && guard < 20) {
+    guard += 1
+    const target = route[patrolIndex]
+    const d = haversineDistance(lat, lon, target.lat, target.lon)
+    if (d > remaining) {
+      const next = moveToward(lat, lon, target.lat, target.lon, remaining)
+      lat = next.lat
+      lon = next.lon
+      remaining = 0
+    } else {
+      lat = target.lat
+      lon = target.lon
+      remaining -= d
+      patrolIndex += patrolDir
+      if (patrolIndex >= route.length) {
+        patrolIndex = route.length - 2
+        patrolDir = -1
+      } else if (patrolIndex < 0) {
+        patrolIndex = 1
+        patrolDir = 1
+      }
+    }
+  }
+  return { lat, lon, patrolIndex, patrolDir }
+}
+
+// 시작 위치가 관리자가 만들어둔 지도의 반경 안이면 그 순찰 경로로 좀비를 배치하고,
+// 아니면 기존 방식(자유/제한구역 모드 + 동적 스폰)을 그대로 씀
+function applyStartSetup(game, startPos, { paceMps, playMode, radiusM }) {
+  game.targetPaceMps = paceMps
+  const matched = ZOMBIE_MAPS.find(
+    (m) => haversineDistance(startPos.lat, startPos.lon, m.center.lat, m.center.lon) <= m.radius
+  )
+  if (matched) {
+    game.presetMap = matched
+    game.playMode = 'restricted'
+    game.areaCenter = matched.center
+    game.areaRadius = matched.radius
+    game.zombies = matched.routes.map((route, i) => ({
+      id: `preset_${matched.id}_${i}_${Date.now()}`,
+      lat: route[0].lat,
+      lon: route[0].lon,
+      speed: paceMps * (0.9 + Math.random() * 0.2),
+      path: null,
+      pathFetchedFor: null,
+      lastRouteAt: 0,
+      routing: false,
+      patrolRoute: route,
+      patrolIndex: route.length > 1 ? 1 : 0,
+      patrolDir: 1,
+      state: 'patrol',
+      chaseHome: null,
+    }))
+  } else {
+    game.presetMap = null
+    game.playMode = playMode
+    if (playMode === 'restricted') {
+      game.areaCenter = startPos
+      game.areaRadius = radiusM
+    }
+  }
+  return matched
+}
+
 export default function App() {
   const game = useRef(makeInitialGame()).current
   const [, setTick] = useState(0)
   const rerender = useCallback(() => setTick((n) => n + 1), [])
 
+  const [mode, setMode] = useState('game') // 'game' | 'admin'
   const [geoError, setGeoError] = useState('')
   const [follow, setFollow] = useState(true)
   const [paceIdx, setPaceIdx] = useState(DEFAULT_PACE_IDX)
@@ -185,7 +265,7 @@ export default function App() {
     const now = Date.now()
     const frozen = now < game.frozenUntil
 
-    if (game.playerPos && game.elapsedSec >= game.nextWaveSec) {
+    if (!game.presetMap && game.playerPos && game.elapsedSec >= game.nextWaveSec) {
       spawnWave()
       game.waveCount += 1
       game.nextWaveSec = game.elapsedSec + NEXT_WAVE_SEC
@@ -200,6 +280,25 @@ export default function App() {
 
     if (!frozen && game.playerPos && game.zombies.length) {
       game.zombies = game.zombies.map((z) => {
+        if (z.patrolRoute) {
+          const distToPlayer = haversineDistance(game.playerPos.lat, game.playerPos.lon, z.lat, z.lon)
+          if (z.state === 'patrol') {
+            if (distToPlayer <= AGGRO_RADIUS_M) return { ...z, state: 'chase', chaseHome: { lat: z.lat, lon: z.lon } }
+            const { lat, lon, patrolIndex, patrolDir } = stepPatrol(z)
+            return { ...z, lat, lon, patrolIndex, patrolDir }
+          }
+          // state === 'chase'
+          const leashDist = haversineDistance(game.playerPos.lat, game.playerPos.lon, z.chaseHome.lat, z.chaseHome.lon)
+          if (leashDist > LEASH_DISTANCE_M) {
+            return { ...z, state: 'patrol', path: null, pathFetchedFor: null, lastRouteAt: 0 }
+          }
+          if (z.path && z.path.length > 1) {
+            const { pos, path } = advanceAlongPath(z.path, z.speed)
+            return { ...z, lat: pos.lat, lon: pos.lon, path }
+          }
+          const next = moveToward(z.lat, z.lon, game.playerPos.lat, game.playerPos.lon, z.speed)
+          return { ...z, lat: next.lat, lon: next.lon }
+        }
         if (z.path && z.path.length > 1) {
           const { pos, path } = advanceAlongPath(z.path, z.speed)
           return { ...z, lat: pos.lat, lon: pos.lon, path }
@@ -208,8 +307,9 @@ export default function App() {
         return { ...z, lat: next.lat, lon: next.lon }
       })
 
-      // 레이트리밋을 지키려고 틱마다 최대 한 마리씩만 경로 재요청 (안 되면 그동안 직선 이동으로 대체됨)
+      // 레이트리밋을 지키려고 틱마다 최대 한 마리씩만 경로 재요청 (순찰 중인 좀비는 제외, 안 되면 직선 이동으로 대체됨)
       const needsRoute = game.zombies.find((z) => {
+        if (z.patrolRoute && z.state !== 'chase') return false
         if (z.routing) return false
         const stale = now - z.lastRouteAt > REROUTE_INTERVAL_MS
         const shifted = !z.pathFetchedFor ||
@@ -240,8 +340,12 @@ export default function App() {
         const d = haversineDistance(game.playerPos.lat, game.playerPos.lon, z.lat, z.lon)
         if (d < CATCH_RADIUS_M) {
           caught = true
-          const far = pickSpawnPoint(game, 90, 160, { behind: true })
-          survivors.push({ ...z, lat: far.lat, lon: far.lon, path: null, pathFetchedFor: null, lastRouteAt: 0 })
+          if (z.patrolRoute) {
+            survivors.push({ ...z, state: 'patrol', path: null, pathFetchedFor: null, lastRouteAt: 0 })
+          } else {
+            const far = pickSpawnPoint(game, 90, 160, { behind: true })
+            survivors.push({ ...z, lat: far.lat, lon: far.lon, path: null, pathFetchedFor: null, lastRouteAt: 0 })
+          }
         } else {
           survivors.push(z)
         }
@@ -363,19 +467,19 @@ export default function App() {
         game.status = 'playing'
         game.playerPos = startPos
         game.lastPos = startPos
-        game.targetPaceMps = PACE_PRESETS[paceIdx].mps
-        game.playMode = playMode
-        if (playMode === 'restricted') {
-          game.areaCenter = startPos
-          game.areaRadius = AREA_RADIUS_PRESETS[radiusIdx]
-        }
+        const matched = applyStartSetup(game, startPos, {
+          paceMps: PACE_PRESETS[paceIdx].mps,
+          playMode,
+          radiusM: AREA_RADIUS_PRESETS[radiusIdx],
+        })
+        if (matched) toast(`이 지역엔 미리 만들어진 좀비 경로가 있어요! (${matched.name}) 🗺️`)
         tickIntervalRef.current = setInterval(tick, 1000)
         rerender()
       },
       (err) => setGeoError(err.message || '위치 권한이 필요해요.'),
       { enableHighAccuracy: true, timeout: 20000 }
     )
-  }, [game, handlePosition, tick, rerender, paceIdx, playMode, radiusIdx])
+  }, [game, handlePosition, tick, rerender, paceIdx, playMode, radiusIdx, toast])
 
   const shootZombie = useCallback(
     (id) => {
@@ -428,15 +532,19 @@ export default function App() {
     game.playerPos = keepPos
     game.lastPos = keepPos
     game.status = 'playing'
-    game.targetPaceMps = PACE_PRESETS[paceIdx].mps
-    game.playMode = playMode
-    if (playMode === 'restricted' && keepPos) {
-      game.areaCenter = keepPos
-      game.areaRadius = AREA_RADIUS_PRESETS[radiusIdx]
+    if (keepPos) {
+      const matched = applyStartSetup(game, keepPos, {
+        paceMps: PACE_PRESETS[paceIdx].mps,
+        playMode,
+        radiusM: AREA_RADIUS_PRESETS[radiusIdx],
+      })
+      if (matched) toast(`이 지역엔 미리 만들어진 좀비 경로가 있어요! (${matched.name}) 🗺️`)
+    } else {
+      game.targetPaceMps = PACE_PRESETS[paceIdx].mps
     }
     tickIntervalRef.current = setInterval(tick, 1000)
     rerender()
-  }, [game, tick, rerender, paceIdx, playMode, radiusIdx])
+  }, [game, tick, rerender, paceIdx, playMode, radiusIdx, toast])
 
   const backToStart = useCallback(() => {
     const keepPos = game.playerPos
@@ -445,6 +553,10 @@ export default function App() {
     game.lastPos = keepPos
     rerender()
   }, [game, rerender])
+
+  if (mode === 'admin') {
+    return <AdminRouteEditor onBack={() => setMode('game')} />
+  }
 
   if (game.status === 'start') {
     return (
@@ -509,6 +621,9 @@ export default function App() {
           {geoError && <p className="zr-error">{geoError}</p>}
           <button className="zr-btn zr-btn-primary" onClick={requestLocationAndStart}>
             도망치기 시작 🏃
+          </button>
+          <button className="zr-admin-link" onClick={() => setMode('admin')}>
+            🛠️ 관리자: 좀비 경로 만들기
           </button>
         </div>
       </div>

@@ -403,3 +403,71 @@ body {
 .zr-marker-pickup {
   font-size: 20px;
 }
+
+/* ── 관리자: 좀비 경로 만들기 ── */
+.zr-admin-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.zr-admin-panel {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 500;
+  background: rgba(10, 14, 12, 0.95);
+  border-top: 1px solid #223028;
+  padding: 12px 14px calc(12px + env(safe-area-inset-bottom));
+  max-height: 42vh;
+  overflow-y: auto;
+}
+
+.zr-admin-input {
+  width: 100%;
+  background: #121815;
+  border: 1px solid #34443b;
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: #eef3ee;
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+
+.zr-admin-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.zr-admin-row .zr-btn-small {
+  flex: 1;
+}
+
+.zr-admin-json {
+  width: 100%;
+  height: 110px;
+  margin-top: 10px;
+  background: #121815;
+  border: 1px solid #34443b;
+  border-radius: 10px;
+  padding: 8px 10px;
+  color: #9db3a6;
+  font-size: 10px;
+  font-family: ui-monospace, monospace;
+  resize: vertical;
+}
+
+.zr-admin-link {
+  background: none;
+  border: none;
+  color: #9db3a6;
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+  margin-top: 6px;
+}
