@@ -52,6 +52,15 @@ export function randomPointNear(lat, lon, minMeters, maxMeters) {
   return destinationPoint(lat, lon, dist, bearing)
 }
 
+// 기준 좌표에서 minMeters~maxMeters 범위, centerBearingDeg를 중심으로 ±spreadDeg 안의 방향으로
+// 떨어진 좌표 (플레이어가 달리는 방향 뒤/앞 쪽으로 좀비·아이템을 스폰시켜서, 도망치는 방향이
+// "그냥 계속 달리던 방향으로" 하나로 정해지게 하기 위함)
+export function randomPointInDirection(lat, lon, minMeters, maxMeters, centerBearingDeg, spreadDeg) {
+  const dist = minMeters + Math.random() * (maxMeters - minMeters)
+  const bearing = centerBearingDeg + (Math.random() * 2 - 1) * spreadDeg
+  return destinationPoint(lat, lon, dist, bearing)
+}
+
 // from에서 to를 향해 stepMeters만큼 다가간 좌표 (좀비 추격 이동용)
 export function moveToward(fromLat, fromLon, toLat, toLon, stepMeters) {
   const dist = haversineDistance(fromLat, fromLon, toLat, toLon)

@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import GameMap from './GameMap.jsx'
-import { advanceAlongPath, clampToRadius, haversineDistance, moveToward, randomPointNear } from './lib/geo.js'
+import {
+  advanceAlongPath,
+  bearingTo,
+  clampToRadius,
+  haversineDistance,
+  moveToward,
+  randomPointInDirection,
+  randomPointNear,
+} from './lib/geo.js'
 import { fetchWalkingPath } from './lib/routing.js'
 
 // OpenRouteService 키가 있으면 좀비가 실제 도로/인도 경로를 따라 쫓아오고,
@@ -41,6 +49,13 @@ const LIVE_PACE_MIN_WINDOW_SEC = 6 // 이보다 짧은 구간에서는 페이스
 const AREA_RADIUS_PRESETS = [300, 500, 1000, 2000] // 미터
 const DEFAULT_RADIUS_IDX = 1
 const OUTSIDE_AREA_HEART_LOSS_MS = 60 * 60 * 1000 // 제한구역 밖에서 누적 이만큼(1시간) 지날 때마다 생명 1개 감소
+
+// 방향이 중구난방이면 "러닝"이 아니게 되니까, 좀비는 항상 지금 달리는 방향의 뒤쪽에서만 등장시켜서
+// 도망치는 방법이 "그냥 계속 앞으로 달리기" 하나로 정해지게 함. 아이템은 반대로 앞쪽에 놓아서
+// 계속 전진할 동기를 줌
+const HEADING_MIN_STEP_M = 15 // 이만큼 움직여야 "달리는 방향"을 갱신 (GPS 잔떨림 방지)
+const ZOMBIE_SPAWN_SPREAD_DEG = 55 // 좀비는 "뒤쪽" 기준 ±이 각도 안에서 스폰
+const PICKUP_SPAWN_SPREAD_DEG = 40 // 아이템은 "앞쪽" 기준 ±이 각도 안에서 스폰
 
 function formatTime(totalSec) {
   const m = Math.floor(totalSec / 60)
@@ -86,7 +101,17 @@ function makeInitialGame() {
     areaRadius: null, // 미터
     outsideAreaMs: 0, // 제한구역 밖에서 누적된 시간(ms)
     outsideAreaHeartsLost: 0, // 그동안 이미 깎은 생명 수 (중복 차감 방지용)
+    headingDeg: null, // 지금 달리는 방향 (충분히 움직이기 전까진 null)
+    headingAnchor: null, // 방향 계산 기준점
   }
+}
+
+// 헤딩을 아는지에 따라 "뒤쪽"(좀비) 또는 "앞쪽"(아이템) 방향으로 치우친 스폰 지점을 고름
+function pickSpawnPoint(game, minM, maxM, { behind } = {}) {
+  if (game.headingDeg == null) return randomPointNear(game.playerPos.lat, game.playerPos.lon, minM, maxM)
+  const centerBearing = behind ? (game.headingDeg + 180) % 360 : game.headingDeg
+  const spread = behind ? ZOMBIE_SPAWN_SPREAD_DEG : PICKUP_SPAWN_SPREAD_DEG
+  return randomPointInDirection(game.playerPos.lat, game.playerPos.lon, minM, maxM, centerBearing, spread)
 }
 
 export default function App() {
@@ -117,7 +142,7 @@ export default function App() {
     const count = Math.min(room, WAVE_SIZE_MIN + Math.floor(Math.random() * (WAVE_SIZE_MAX - WAVE_SIZE_MIN + 1)))
     const spawned = []
     for (let i = 0; i < count; i++) {
-      let p = randomPointNear(game.playerPos.lat, game.playerPos.lon, 70, 150)
+      let p = pickSpawnPoint(game, 70, 150, { behind: true })
       if (game.playMode === 'restricted' && game.areaCenter) p = clampToRadius(p, game.areaCenter, game.areaRadius)
       spawned.push({
         id: `z${Date.now()}_${i}_${Math.random().toString(36).slice(2, 7)}`,
@@ -137,7 +162,7 @@ export default function App() {
   const spawnPickup = useCallback(
     (type) => {
       if (!game.playerPos) return
-      let p = randomPointNear(game.playerPos.lat, game.playerPos.lon, 30, 90)
+      let p = pickSpawnPoint(game, 30, 90, { behind: false })
       if (game.playMode === 'restricted' && game.areaCenter) p = clampToRadius(p, game.areaCenter, game.areaRadius)
       game.pickups = [...game.pickups, { id: `${type}_${Date.now()}`, type, lat: p.lat, lon: p.lon }]
     },
@@ -215,7 +240,7 @@ export default function App() {
         const d = haversineDistance(game.playerPos.lat, game.playerPos.lon, z.lat, z.lon)
         if (d < CATCH_RADIUS_M) {
           caught = true
-          const far = randomPointNear(game.playerPos.lat, game.playerPos.lon, 90, 160)
+          const far = pickSpawnPoint(game, 90, 160, { behind: true })
           survivors.push({ ...z, lat: far.lat, lon: far.lon, path: null, pathFetchedFor: null, lastRouteAt: 0 })
         } else {
           survivors.push(z)
@@ -294,6 +319,15 @@ export default function App() {
         game.paceSamples = [...game.paceSamples, { t: now, d: game.distance }].filter(
           (s) => now - s.t <= LIVE_PACE_WINDOW_MS
         )
+        if (!game.headingAnchor) {
+          game.headingAnchor = newPos
+        } else {
+          const stepDist = haversineDistance(game.headingAnchor.lat, game.headingAnchor.lon, newPos.lat, newPos.lon)
+          if (stepDist >= HEADING_MIN_STEP_M) {
+            game.headingDeg = bearingTo(game.headingAnchor.lat, game.headingAnchor.lon, newPos.lat, newPos.lon)
+            game.headingAnchor = newPos
+          }
+        }
       }
       setGeoError('')
       rerender()
