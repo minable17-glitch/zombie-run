@@ -17,10 +17,10 @@ GitHub Pages 배포용으로는 저장소 Settings → Secrets and variables →
 등록해두면 배포 워크플로우가 자동으로 가져다 씁니다. 키가 없어도 게임은 정상 동작하고, 좀비는 직선으로만
 쫓아옵니다.
 
-관리자가 좀비 순찰 지도를 저장하려면 [Supabase](https://supabase.com) 무료 프로젝트가 하나 필요합니다.
-자세한 건 아래 "관리자용 좀비 경로 만들기" 항목을 참고하세요. `.env.local`에 `VITE_SUPABASE_URL`,
-`VITE_SUPABASE_ANON_KEY`를 넣고, 배포용으로는 같은 이름의 GitHub 저장소 시크릿을 등록하면 됩니다. 이것도
-없으면 관리자 화면에서 저장만 안 될 뿐, 게임 자체(자유/제한구역 모드)는 그대로 잘 동작합니다.
+관리자가 좀비 순찰 지도를 저장하려면 Supabase 프로젝트가 하나 필요합니다 (새싹책방과 같은 프로젝트를
+별도 테이블로 함께 씁니다). 자세한 건 아래 "관리자용 좀비 경로 만들기" 항목을 참고하세요. `.env.local`에
+`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`를 넣으면 로컬에서도 저장이 됩니다. 이게 없어도 관리자
+화면에서 저장만 안 될 뿐, 게임 자체(자유/제한구역 모드)는 그대로 잘 동작합니다.
 
 Geolocation API는 보안 컨텍스트(HTTPS 또는 localhost)에서만 동작합니다.
 `npm run dev`는 `@vitejs/plugin-basic-ssl`로 자체 서명 인증서를 사용해 https로 켜지므로,
@@ -60,17 +60,20 @@ GPS 테스트를 해볼 수 있습니다. 실제 배포 시에는 Vercel/Netlify
 플레이할 수 있습니다. Supabase(무료) 프로젝트가 하나 필요합니다.
 
 **최초 1회 설정**
-1. https://supabase.com 에서 무료 회원가입 후 새 프로젝트를 만듭니다 (이름은 자유롭게, 예: zombie-run).
-2. 왼쪽 메뉴 **SQL Editor**에서 이 저장소의 `supabase/schema.sql` 내용을 그대로 붙여넣고 실행합니다
-   (좀비 지도를 저장할 테이블을 한 번만 만드는 작업).
-3. **Settings → API**에서 **Project URL**과 **anon public** 키를 복사합니다.
-4. 로컬 개발용: `zombie-run/.env.local`에 아래 두 줄을 추가합니다 (git에는 안 올라감).
+
+Supabase 무료 플랜은 프로젝트를 2개까지만 만들 수 있어서, 새 프로젝트 대신 기존 Supabase 프로젝트에
+테이블만 하나 추가하는 방식을 씁니다 (완전히 별도 테이블이라 다른 데이터와 섞이지 않습니다).
+
+1. 기존 Supabase 프로젝트의 **SQL Editor**에서 이 저장소의 `supabase/schema.sql` 내용을 그대로
+   붙여넣고 실행합니다 (좀비 지도를 저장할 `zombie_maps` 테이블을 한 번만 만드는 작업).
+2. 배포 워크플로우(`.github/workflows/deploy.yml`)에 프로젝트 URL과 anon(publishable) 키가 이미
+   들어있어서 별도 설정 없이 바로 배포에 반영됩니다.
+3. 로컬 개발용으로도 쓰려면 `zombie-run/.env.local`에 같은 값을 넣어주세요 (git에는 안 올라감).
    ```
-   VITE_SUPABASE_URL=복사한 Project URL
-   VITE_SUPABASE_ANON_KEY=복사한 anon 키
+   VITE_SUPABASE_URL=...supabase.co
+   VITE_SUPABASE_ANON_KEY=...
    ```
-5. 배포용: GitHub 저장소 Settings → Secrets and variables → Actions에 같은 이름
-   (`SUPABASE_URL`, `SUPABASE_ANON_KEY`)으로 시크릿을 등록합니다.
+   (새 프로젝트를 새로 만드셨다면 그 프로젝트의 Settings → API에서 값을 복사해 대신 넣으세요.)
 
 **사용법**
 1. 시작 화면 맨 아래 "🛠️ 관리자: 좀비 경로 만들기"를 누릅니다 (위치 권한 필요).
