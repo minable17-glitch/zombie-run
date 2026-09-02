@@ -11,7 +11,7 @@ import {
   randomPointNear,
 } from './lib/geo.js'
 import { fetchWalkingPath } from './lib/routing.js'
-import ZOMBIE_MAPS from './data/zombieMaps.json'
+import { supabase } from './lib/supabaseClient.js'
 
 // OpenRouteService 키가 있으면 좀비가 실제 도로/인도 경로를 따라 쫓아오고,
 // 없으면(또는 요청 실패 시) 자동으로 직선 이동으로 대체됨
@@ -157,9 +157,9 @@ function stepPatrol(z) {
 
 // 시작 위치가 관리자가 만들어둔 지도의 반경 안이면 그 순찰 경로로 좀비를 배치하고,
 // 아니면 기존 방식(자유/제한구역 모드 + 동적 스폰)을 그대로 씀
-function applyStartSetup(game, startPos, { paceMps, playMode, radiusM }) {
+function applyStartSetup(game, startPos, { paceMps, playMode, radiusM, zombieMaps }) {
   game.targetPaceMps = paceMps
-  const matched = ZOMBIE_MAPS.find(
+  const matched = zombieMaps.find(
     (m) => haversineDistance(startPos.lat, startPos.lon, m.center.lat, m.center.lon) <= m.radius
   )
   if (matched) {
@@ -199,6 +199,7 @@ export default function App() {
   const rerender = useCallback(() => setTick((n) => n + 1), [])
 
   const [mode, setMode] = useState('game') // 'game' | 'admin'
+  const [zombieMaps, setZombieMaps] = useState([])
   const [geoError, setGeoError] = useState('')
   const [follow, setFollow] = useState(true)
   const [paceIdx, setPaceIdx] = useState(DEFAULT_PACE_IDX)
@@ -214,6 +215,25 @@ export default function App() {
     clearTimeout(toastTimerRef.current)
     toastTimerRef.current = setTimeout(() => setToastMsg(''), 2600)
   }, [])
+
+  const refreshZombieMaps = useCallback(async () => {
+    if (!supabase) return
+    const { data, error } = await supabase.from('zombie_maps').select('*')
+    if (error || !data) return
+    setZombieMaps(
+      data.map((row) => ({
+        id: row.id,
+        name: row.name,
+        center: { lat: row.center_lat, lon: row.center_lon },
+        radius: row.radius_m,
+        routes: row.routes,
+      }))
+    )
+  }, [])
+
+  useEffect(() => {
+    refreshZombieMaps()
+  }, [refreshZombieMaps])
 
   const spawnWave = useCallback(() => {
     if (!game.playerPos) return
@@ -471,6 +491,7 @@ export default function App() {
           paceMps: PACE_PRESETS[paceIdx].mps,
           playMode,
           radiusM: AREA_RADIUS_PRESETS[radiusIdx],
+          zombieMaps,
         })
         if (matched) toast(`이 지역엔 미리 만들어진 좀비 경로가 있어요! (${matched.name}) 🗺️`)
         tickIntervalRef.current = setInterval(tick, 1000)
@@ -479,7 +500,7 @@ export default function App() {
       (err) => setGeoError(err.message || '위치 권한이 필요해요.'),
       { enableHighAccuracy: true, timeout: 20000 }
     )
-  }, [game, handlePosition, tick, rerender, paceIdx, playMode, radiusIdx, toast])
+  }, [game, handlePosition, tick, rerender, paceIdx, playMode, radiusIdx, toast, zombieMaps])
 
   const shootZombie = useCallback(
     (id) => {
@@ -537,6 +558,7 @@ export default function App() {
         paceMps: PACE_PRESETS[paceIdx].mps,
         playMode,
         radiusM: AREA_RADIUS_PRESETS[radiusIdx],
+        zombieMaps,
       })
       if (matched) toast(`이 지역엔 미리 만들어진 좀비 경로가 있어요! (${matched.name}) 🗺️`)
     } else {
@@ -544,7 +566,7 @@ export default function App() {
     }
     tickIntervalRef.current = setInterval(tick, 1000)
     rerender()
-  }, [game, tick, rerender, paceIdx, playMode, radiusIdx, toast])
+  }, [game, tick, rerender, paceIdx, playMode, radiusIdx, toast, zombieMaps])
 
   const backToStart = useCallback(() => {
     const keepPos = game.playerPos
@@ -555,7 +577,7 @@ export default function App() {
   }, [game, rerender])
 
   if (mode === 'admin') {
-    return <AdminRouteEditor onBack={() => setMode('game')} />
+    return <AdminRouteEditor onBack={() => setMode('game')} onSaved={refreshZombieMaps} />
   }
 
   if (game.status === 'start') {

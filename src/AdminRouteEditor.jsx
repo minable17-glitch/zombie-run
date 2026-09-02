@@ -1,20 +1,21 @@
 import { useCallback, useEffect, useState } from 'react'
 import AdminMap from './AdminMap.jsx'
-import { haversineDistance } from './lib/geo.js'
+import { supabase } from './lib/supabaseClient.js'
 
 const DEFAULT_RADIUS_M = 400
 
-// 관리자가 특정 장소에 좀비가 다닐 경로를 미리 그려서, 그 결과 JSON을
-// src/data/zombieMaps.json에 붙여넣을 수 있게 만들어주는 화면. 서버 없이
-// 코드에 직접 커밋하는 방식이라 별도 백엔드가 필요 없음.
-export default function AdminRouteEditor({ onBack }) {
+// 관리자가 특정 장소에 좀비가 다닐 경로를 미리 그려서, 그대로 Supabase에 저장하는 화면.
+// 저장하면 그 위치 근처에서 누구든 게임을 시작할 때 바로 적용됨 (배포/커밋 필요 없음)
+export default function AdminRouteEditor({ onBack, onSaved }) {
   const [center, setCenter] = useState(null)
   const [geoError, setGeoError] = useState('')
   const [mapName, setMapName] = useState('')
   const [radius, setRadius] = useState(DEFAULT_RADIUS_M)
   const [routes, setRoutes] = useState([])
   const [currentRoute, setCurrentRoute] = useState([])
-  const [copied, setCopied] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
+  const [saved, setSaved] = useState(false)
 
   useEffect(() => {
     if (!('geolocation' in navigator)) {
@@ -47,30 +48,36 @@ export default function AdminRouteEditor({ onBack }) {
     setCurrentRoute([])
   }
 
-  const buildMapData = () => {
-    const allRoutes = currentRoute.length >= 2 ? [...routes, currentRoute] : routes
-    return {
-      id: (mapName.trim() || 'map') + '_' + Date.now(),
-      name: mapName.trim() || '이름 없는 지도',
-      center,
-      radius,
-      routes: allRoutes,
-    }
-  }
-
-  const copyJson = async () => {
-    const json = JSON.stringify(buildMapData(), null, 2)
-    try {
-      await navigator.clipboard.writeText(json)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    } catch {
-      setCopied(false)
-    }
-  }
-
   const totalRoutes = routes.length + (currentRoute.length >= 2 ? 1 : 0)
-  const jsonPreview = center ? JSON.stringify(buildMapData(), null, 2) : ''
+
+  const saveMap = async () => {
+    if (!supabase) {
+      setSaveError('저장소가 아직 연결 안 됐어요 (관리자에게 Supabase 설정을 문의하세요).')
+      return
+    }
+    const allRoutes = currentRoute.length >= 2 ? [...routes, currentRoute] : routes
+    if (allRoutes.length === 0 || !center) return
+    setSaving(true)
+    setSaveError('')
+    const { error } = await supabase.from('zombie_maps').insert({
+      name: mapName.trim() || '이름 없는 지도',
+      center_lat: center.lat,
+      center_lon: center.lon,
+      radius_m: radius,
+      routes: allRoutes,
+    })
+    setSaving(false)
+    if (error) {
+      setSaveError(error.message)
+      return
+    }
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2500)
+    setRoutes([])
+    setCurrentRoute([])
+    setMapName('')
+    onSaved?.()
+  }
 
   return (
     <div className="zr-screen">
@@ -140,17 +147,26 @@ export default function AdminRouteEditor({ onBack }) {
                 전체 초기화
               </button>
             </div>
+            {routes.length > 0 && (
+              <div className="zr-admin-route-list">
+                {routes.map((route, i) => (
+                  <span key={i} className="zr-admin-route-chip">
+                    경로 {i + 1} ({route.length}점)
+                    <button onClick={() => removeRoute(i)}>✕</button>
+                  </span>
+                ))}
+              </div>
+            )}
             <p className="zr-pace-hint" style={{ margin: '4px 0' }}>
               완성된 경로 {routes.length}개{totalRoutes !== routes.length ? ' (+ 지금 그리는 중 1개)' : ''} — 경로마다 좀비 1마리가
               그 위를 왔다갔다 순찰해요.
             </p>
-            <button className="zr-btn zr-btn-primary" onClick={copyJson} disabled={totalRoutes === 0}>
-              {copied ? '복사됨! ✅' : 'JSON 복사하기'}
+            {saveError && <p className="zr-error">{saveError}</p>}
+            <button className="zr-btn zr-btn-primary" onClick={saveMap} disabled={totalRoutes === 0 || saving}>
+              {saving ? '저장 중…' : saved ? '저장됨! ✅' : '이 지도 저장하기'}
             </button>
-            {jsonPreview && <textarea className="zr-admin-json" readOnly value={jsonPreview} />}
             <p className="zr-pace-hint">
-              복사한 내용을 <code>src/data/zombieMaps.json</code> 배열 안에 붙여넣고 커밋하면, 이 위치 근처에서
-              게임을 시작할 때 자동으로 이 경로가 적용돼요.
+              저장하면 이 위치 반경 {radius}m 안에서 게임을 시작할 때 바로 이 경로가 적용돼요.
             </p>
           </div>
         </>

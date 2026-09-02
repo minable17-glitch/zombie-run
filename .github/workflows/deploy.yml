@@ -31,6 +31,9 @@ jobs:
           # 좀비 도로 경로 계산용 OpenRouteService 키 (Settings → Secrets and variables → Actions에 등록)
           # 없어도 빌드는 되고, 좀비가 도로 대신 직선으로 쫓아오는 것으로만 자연스럽게 대체됨
           VITE_ORS_API_KEY: ${{ secrets.ORS_API_KEY }}
+          # 관리자 좀비 지도 저장용 Supabase 프로젝트 (없으면 관리자 저장 기능만 비활성화됨)
+          VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
