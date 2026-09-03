@@ -12,6 +12,8 @@ import {
 } from './lib/geo.js'
 import { fetchWalkingPath } from './lib/routing.js'
 import { supabase } from './lib/supabaseClient.js'
+import { AREA_RADIUS_PRESETS, DEFAULT_PACE_IDX, DEFAULT_RADIUS_IDX, PACE_PRESETS } from './lib/gameConfig.js'
+import RoomLobby from './RoomLobby.jsx'
 
 // OpenRouteService 키가 있으면 좀비가 실제 도로/인도 경로를 따라 쫓아오고,
 // 없으면(또는 요청 실패 시) 자동으로 직선 이동으로 대체됨
@@ -33,24 +35,17 @@ const START_AMMO = 3
 const MAX_AMMO = 12
 const START_HEALTH = 6
 
-// 좀비 속도 = 선택한 목표 페이스(분:초/km)를 그대로 m/s로 환산한 값 (개체별로 살짝 편차를 줌)
-// 목표보다 느리게 뛰면 좀비가 따라잡고, 유지/추월하면 거리가 벌어지는 방식
-const PACE_PRESETS = [
-  { label: "5'30\"/km", secPerKm: 5 * 60 + 30 },
-  { label: "6'00\"/km", secPerKm: 6 * 60 },
-  { label: "6'30\"/km", secPerKm: 6 * 60 + 30 },
-  { label: "7'00\"/km", secPerKm: 7 * 60 },
-].map((p) => ({ ...p, mps: 1000 / p.secPerKm }))
-const DEFAULT_PACE_IDX = 1
-
+// 목표보다 느리게 뛰면 좀비가 따라잡고, 유지/추월하면 거리가 벌어지는 방식 (프리셋은 lib/gameConfig.js)
 const LIVE_PACE_WINDOW_MS = 30000 // 실시간 페이스 계산에 쓰는 최근 구간(30초)
 const LIVE_PACE_MIN_WINDOW_SEC = 6 // 이보다 짧은 구간에서는 페이스가 안 흔들리게 표시 안 함
 
 // 제한구역 모드: 시작 위치를 중심으로 반경을 정해서 그 안에서만 좀비/아이템이 등장하고,
 // 그 밖에 계속 나가 있으면(누적 시간 기준) 생명이 줄어듦
-const AREA_RADIUS_PRESETS = [300, 500, 1000, 2000] // 미터
-const DEFAULT_RADIUS_IDX = 1
 const OUTSIDE_AREA_HEART_LOSS_MS = 60 * 60 * 1000 // 제한구역 밖에서 누적 이만큼(1시간) 지날 때마다 생명 1개 감소
+
+// 방(그룹) 모드: 각자 따로 좀비를 만나지만, 다른 참가자들의 생존 상태를 주기적으로 공유함
+const ROOM_STAT_PUSH_SEC = 5 // 이 간격마다 내 상태를 방에 올림
+const ROOM_TEAMMATES_POLL_MS = 5000 // 이 간격마다 다른 참가자 상태를 새로 받아옴
 
 // 방향이 중구난방이면 "러닝"이 아니게 되니까, 좀비는 항상 지금 달리는 방향의 뒤쪽에서만 등장시켜서
 // 도망치는 방법이 "그냥 계속 앞으로 달리기" 하나로 정해지게 함. 아이템은 반대로 앞쪽에 놓아서
@@ -111,6 +106,9 @@ function makeInitialGame() {
     headingDeg: null, // 지금 달리는 방향 (충분히 움직이기 전까진 null)
     headingAnchor: null, // 방향 계산 기준점
     presetMap: null, // 관리자가 미리 만들어둔 좀비 지도 (해당되면)
+    roomId: null, // 방(그룹) 모드일 때만 채워짐
+    roomPlayerId: null,
+    roomNickname: null,
   }
 }
 
@@ -193,12 +191,33 @@ function applyStartSetup(game, startPos, { paceMps, playMode, radiusM, zombieMap
   return matched
 }
 
+// 내 생존 상태를 방(그룹)에 올림. 실패해도 게임에는 영향 없음 (다음 주기에 다시 시도됨)
+function pushRoomStat(game, status) {
+  if (!supabase || !game.roomId || !game.roomPlayerId) return
+  ;(async () => {
+    try {
+      await supabase
+        .from('room_players')
+        .update({
+          distance_m: game.distance,
+          health: game.health,
+          score: game.score,
+          status,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', game.roomPlayerId)
+    } catch {
+      // 무시
+    }
+  })()
+}
+
 export default function App() {
   const game = useRef(makeInitialGame()).current
   const [, setTick] = useState(0)
   const rerender = useCallback(() => setTick((n) => n + 1), [])
 
-  const [mode, setMode] = useState('game') // 'game' | 'admin'
+  const [mode, setMode] = useState('game') // 'game' | 'admin' | 'room'
   const [zombieMaps, setZombieMaps] = useState([])
   const [geoError, setGeoError] = useState('')
   const [follow, setFollow] = useState(true)
@@ -209,6 +228,9 @@ export default function App() {
   const toastTimerRef = useRef(null)
   const watchIdRef = useRef(null)
   const tickIntervalRef = useRef(null)
+  const [teammates, setTeammates] = useState([])
+  const [showTeammates, setShowTeammates] = useState(false)
+  const teammatesPollRef = useRef(null)
 
   const toast = useCallback((msg) => {
     setToastMsg(msg)
@@ -278,6 +300,10 @@ export default function App() {
       game.status = 'gameover'
       game.gameOverReason = reason
       clearInterval(tickIntervalRef.current)
+      if (game.roomId) {
+        pushRoomStat(game, reason === 'manual' ? 'finished' : 'caught')
+        clearInterval(teammatesPollRef.current)
+      }
       rerender()
     },
     [game, rerender]
@@ -427,6 +453,10 @@ export default function App() {
       }
     }
 
+    if (game.roomId && game.elapsedSec % ROOM_STAT_PUSH_SEC === 0) {
+      pushRoomStat(game, 'alive')
+    }
+
     rerender()
   }, [game, rerender, spawnWave, spawnPickup, toast, endGame])
 
@@ -468,6 +498,7 @@ export default function App() {
       if (watchIdRef.current != null) navigator.geolocation.clearWatch(watchIdRef.current)
       clearInterval(tickIntervalRef.current)
       clearTimeout(toastTimerRef.current)
+      clearInterval(teammatesPollRef.current)
     }
   }, [])
 
@@ -505,6 +536,64 @@ export default function App() {
       { enableHighAccuracy: true, timeout: 20000 }
     )
   }, [game, handlePosition, tick, rerender, paceIdx, playMode, radiusIdx, toast, zombieMaps])
+
+  const pollTeammates = useCallback(async () => {
+    if (!supabase || !game.roomId) return
+    try {
+      const { data } = await supabase
+        .from('room_players')
+        .select('*')
+        .eq('room_id', game.roomId)
+        .order('joined_at', { ascending: true })
+      if (data) setTeammates(data)
+    } catch {
+      // 네트워크 문제는 무시, 다음 주기에 다시 시도됨
+    }
+  }, [game])
+
+  const startGameFromRoom = useCallback(
+    (config, session) => {
+      if (!('geolocation' in navigator)) {
+        setGeoError('이 기기/브라우저는 위치 정보를 지원하지 않아요.')
+        return
+      }
+      setGeoError('')
+      if (watchIdRef.current == null) {
+        watchIdRef.current = navigator.geolocation.watchPosition(
+          handlePosition,
+          (err) => setGeoError(err.message || '위치 권한을 확인해주세요.'),
+          { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 }
+        )
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const startPos = { lat: pos.coords.latitude, lon: pos.coords.longitude }
+          Object.assign(game, makeInitialGame())
+          game.status = 'playing'
+          game.playerPos = startPos
+          game.lastPos = startPos
+          game.roomId = session.roomId
+          game.roomPlayerId = session.playerId
+          game.roomNickname = session.nickname
+          const matched = applyStartSetup(game, startPos, {
+            paceMps: PACE_PRESETS[config.paceIdx ?? DEFAULT_PACE_IDX].mps,
+            playMode: config.playMode || 'free',
+            radiusM: AREA_RADIUS_PRESETS[config.radiusIdx ?? DEFAULT_RADIUS_IDX],
+            zombieMaps,
+          })
+          if (matched) toast(`이 지역엔 미리 만들어진 좀비 경로가 있어요! (${matched.name}) 🗺️`)
+          tickIntervalRef.current = setInterval(tick, 1000)
+          clearInterval(teammatesPollRef.current)
+          pollTeammates()
+          teammatesPollRef.current = setInterval(pollTeammates, ROOM_TEAMMATES_POLL_MS)
+          rerender()
+        },
+        (err) => setGeoError(err.message || '위치 권한이 필요해요.'),
+        { enableHighAccuracy: true, timeout: 20000 }
+      )
+    },
+    [game, handlePosition, tick, rerender, zombieMaps, toast, pollTeammates]
+  )
 
   const shootZombie = useCallback(
     (id) => {
@@ -584,6 +673,18 @@ export default function App() {
     return <AdminRouteEditor onBack={() => setMode('game')} onSaved={refreshZombieMaps} />
   }
 
+  if (mode === 'room') {
+    return (
+      <RoomLobby
+        onBack={() => setMode('game')}
+        onStart={(config, session) => {
+          setMode('game')
+          startGameFromRoom(config, session)
+        }}
+      />
+    )
+  }
+
   if (game.status === 'start') {
     return (
       <div className="zr-screen zr-start">
@@ -647,6 +748,9 @@ export default function App() {
           {geoError && <p className="zr-error">{geoError}</p>}
           <button className="zr-btn zr-btn-primary" onClick={requestLocationAndStart}>
             도망치기 시작 🏃
+          </button>
+          <button className="zr-btn zr-btn-ghost" onClick={() => setMode('room')}>
+            👥 그룹으로 같이 뛰기
           </button>
           <button className="zr-admin-link" onClick={() => setMode('admin')}>
             🛠️ 관리자: 좀비 경로 만들기
@@ -763,7 +867,36 @@ export default function App() {
           ⚡{Math.floor(game.gauge)}
         </button>
         <div className="zr-badge">💀 {game.score}</div>
+        {game.roomId && (
+          <button className="zr-badge" onClick={() => setShowTeammates((v) => !v)}>
+            👥 {teammates.length}
+          </button>
+        )}
       </div>
+
+      {game.roomId && showTeammates && (
+        <div className="zr-teammates-panel">
+          <div className="zr-teammates-header">
+            <span>동료 ({teammates.length}명)</span>
+            <button className="zr-round-btn" onClick={() => setShowTeammates(false)}>
+              ✕
+            </button>
+          </div>
+          {teammates.map((p) => (
+            <div key={p.id} className="zr-teammate-row">
+              <span className="zr-teammate-name">
+                {p.nickname}
+                {p.id === game.roomPlayerId ? ' (나)' : ''}
+              </span>
+              <span className="zr-teammate-stats">
+                {(p.distance_m / 1000).toFixed(2)}km · {p.health != null ? '❤️'.repeat(Math.max(0, p.health)) : ''}
+                {p.status === 'caught' && ' 💀'}
+                {p.status === 'finished' && ' 🏁'}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="zr-banner-stack">
         {frozenActive && <div className="zr-banner zr-banner-blue">⏳ 좀비 이동 정지 중</div>}

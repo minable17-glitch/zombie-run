@@ -219,6 +219,9 @@ body {
   font-weight: 700;
   min-width: 52px;
   text-align: center;
+  color: inherit;
+  font-family: inherit;
+  cursor: default;
 }
 
 .zr-hearts {
@@ -488,6 +491,70 @@ body {
   font-size: 10px;
   font-family: ui-monospace, monospace;
   resize: vertical;
+}
+
+.zr-teammates-panel {
+  position: absolute;
+  top: 90px;
+  right: 10px;
+  z-index: 600;
+  width: 200px;
+  max-height: 50vh;
+  overflow-y: auto;
+  background: rgba(10, 14, 12, 0.95);
+  border: 1px solid #223028;
+  border-radius: 14px;
+  padding: 10px;
+}
+
+.zr-teammates-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.zr-teammates-header .zr-round-btn {
+  width: 28px;
+  height: 28px;
+  font-size: 13px;
+}
+
+.zr-teammate-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 0;
+  border-top: 1px solid #1a221d;
+  font-size: 12px;
+}
+
+.zr-teammate-row:first-child {
+  border-top: none;
+}
+
+.zr-teammate-name {
+  font-weight: 700;
+}
+
+.zr-teammate-stats {
+  color: #9db3a6;
+  font-size: 11px;
+}
+
+.zr-room-code {
+  font-size: 40px;
+  font-weight: 800;
+  letter-spacing: 8px;
+  text-align: center;
+  color: #ffd54f;
+  background: #121815;
+  border: 1px solid #34443b;
+  border-radius: 14px;
+  padding: 14px;
+  margin: 4px 0;
 }
 
 .zr-admin-link {
