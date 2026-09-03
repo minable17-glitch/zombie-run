@@ -218,17 +218,21 @@ export default function App() {
 
   const refreshZombieMaps = useCallback(async () => {
     if (!supabase) return
-    const { data, error } = await supabase.from('zombie_maps').select('*')
-    if (error || !data) return
-    setZombieMaps(
-      data.map((row) => ({
-        id: row.id,
-        name: row.name,
-        center: { lat: row.center_lat, lon: row.center_lon },
-        radius: row.radius_m,
-        routes: row.routes,
-      }))
-    )
+    try {
+      const { data, error } = await supabase.from('zombie_maps').select('*')
+      if (error || !data) return
+      setZombieMaps(
+        data.map((row) => ({
+          id: row.id,
+          name: row.name,
+          center: { lat: row.center_lat, lon: row.center_lon },
+          radius: row.radius_m,
+          routes: row.routes,
+        }))
+      )
+    } catch {
+      // 네트워크 문제 등으로 실패해도 자유/제한구역 모드로 게임은 그대로 진행됨
+    }
   }, [])
 
   useEffect(() => {

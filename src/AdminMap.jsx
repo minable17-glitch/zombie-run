@@ -7,10 +7,11 @@ const ROUTE_COLORS = ['#ef5350', '#42a5f5', '#66bb6a', '#ffca28', '#ab47bc', '#2
 
 // 관리자가 지도를 탭해서 좀비 경로(좌표 배열)를 그리는 화면.
 // GameMap과 달리 지도 클릭을 받아 점을 추가하고, 완성된 경로들 + 지금 그리는 중인 경로를 선으로 표시함
-export default function AdminMap({ center, routes, currentRoute, onMapClick }) {
+export default function AdminMap({ center, radius, routes, currentRoute, onMapClick }) {
   const containerRef = useRef(null)
   const mapRef = useRef(null)
   const centerMarkerRef = useRef(null)
+  const areaCircleRef = useRef(null)
   const routeLayersRef = useRef([])
   const currentLayersRef = useRef([])
   const onMapClickRef = useRef(onMapClick)
@@ -32,11 +33,29 @@ export default function AdminMap({ center, routes, currentRoute, onMapClick }) {
       map.remove()
       mapRef.current = null
       centerMarkerRef.current = null
+      areaCircleRef.current = null
       routeLayersRef.current = []
       currentLayersRef.current = []
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !center) return
+    if (!areaCircleRef.current) {
+      areaCircleRef.current = L.circle([center.lat, center.lon], {
+        radius,
+        color: '#ef5350',
+        weight: 2,
+        fillColor: '#ef5350',
+        fillOpacity: 0.06,
+      }).addTo(map)
+    } else {
+      areaCircleRef.current.setLatLng([center.lat, center.lon])
+      areaCircleRef.current.setRadius(radius)
+    }
+  }, [center, radius])
 
   useEffect(() => {
     const map = mapRef.current
