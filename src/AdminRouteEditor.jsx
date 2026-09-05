@@ -128,7 +128,9 @@ export default function AdminRouteEditor({ onBack, onSaved }) {
       return
     }
     const allRoutes = currentRoute.length >= 2 ? [...routes, currentRoute] : routes
-    if (allRoutes.length === 0 || !center) return
+    // 새 지도는 경로가 하나는 있어야 저장 의미가 있지만, 기존 지도를 수정하는 중이면
+    // 경로를 전부 지우고(초기화) 빈 채로 저장(= 이 위치의 좀비를 없앰)하는 것도 허용함
+    if ((allRoutes.length === 0 && !editingMapId) || !center) return
     setSaving(true)
     setSaveError('')
     const payload = {
@@ -282,8 +284,20 @@ export default function AdminRouteEditor({ onBack, onSaved }) {
                   1마리가 그 위를 왔다갔다 순찰해요. 구역 밖을 탭해도 자동으로 구역 안쪽으로 당겨져요.
                 </p>
                 {saveError && <p className="zr-error">{saveError}</p>}
-                <button className="zr-btn zr-btn-primary" onClick={saveMap} disabled={totalRoutes === 0 || saving}>
-                  {saving ? '저장 중…' : saved ? '저장됨! ✅' : editingMapId ? '수정 저장하기' : '이 지도 저장하기'}
+                <button
+                  className="zr-btn zr-btn-primary"
+                  onClick={saveMap}
+                  disabled={(totalRoutes === 0 && !editingMapId) || saving}
+                >
+                  {saving
+                    ? '저장 중…'
+                    : saved
+                      ? '저장됨! ✅'
+                      : editingMapId
+                        ? totalRoutes === 0
+                          ? '경로 비운 상태로 저장하기'
+                          : '수정 저장하기'
+                        : '이 지도 저장하기'}
                 </button>
                 <p className="zr-pace-hint">
                   저장하면 이 위치 반경 {radius}m 안에서 게임을 시작할 때 바로 이 경로가 적용돼요.
