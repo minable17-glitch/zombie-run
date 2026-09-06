@@ -12,15 +12,16 @@ function randomCode(len = 5) {
 }
 
 // 관리자(방장)가 방을 만들고 코드를 공유하면, 참가자들이 그 코드로 들어와 대기하다가
-// 방장이 시작을 누르면 전원이 동시에 같은 설정(페이스/모드)으로 게임을 시작하는 화면.
+// 방장이 시작을 누르면 전원이 동시에 같은 설정(페이스/모드/지도)으로 게임을 시작하는 화면.
 // "따로 모드": 각자 자기 좀비를 만나지만, 서로의 생존 상태는 주기적으로 공유됨(App.jsx가 담당)
-export default function RoomLobby({ onBack, onStart }) {
+export default function RoomLobby({ zombieMaps = [], onBack, onStart }) {
   const [step, setStep] = useState('choose') // 'choose' | 'create' | 'join' | 'waiting'
   const [nickname, setNickname] = useState('')
   const [joinCode, setJoinCode] = useState('')
   const [paceIdx, setPaceIdx] = useState(DEFAULT_PACE_IDX)
   const [playMode, setPlayMode] = useState('free')
   const [radiusIdx, setRadiusIdx] = useState(DEFAULT_RADIUS_IDX)
+  const [mapId, setMapId] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -83,7 +84,7 @@ export default function RoomLobby({ onBack, onStart }) {
     setError('')
     try {
       const code = randomCode()
-      const config = { paceIdx, playMode, radiusIdx }
+      const config = mapId ? { paceIdx, mapId } : { paceIdx, playMode, radiusIdx }
       const { data: roomRow, error: roomErr } = await supabase
         .from('game_rooms')
         .insert({ code, host_name: nickname.trim(), status: 'waiting', config })
@@ -206,33 +207,76 @@ export default function RoomLobby({ onBack, onStart }) {
               </button>
             ))}
           </div>
-          <p className="zr-pace-label">플레이 모드</p>
-          <div className="zr-pace-picker zr-pace-picker-2col">
+          <p className="zr-pace-label">좀비 경로 (관리자가 만들어둔 지도, 선택 사항)</p>
+          <div className="zr-admin-route-list">
             <button
-              className={playMode === 'free' ? 'zr-pace-btn zr-pace-btn-on' : 'zr-pace-btn'}
-              onClick={() => setPlayMode('free')}
+              type="button"
+              className="zr-admin-route-chip"
+              style={{
+                cursor: 'pointer',
+                font: 'inherit',
+                borderColor: mapId === null ? '#ef5350' : undefined,
+                background: mapId === null ? 'rgba(239, 83, 80, 0.22)' : undefined,
+                color: mapId === null ? '#fff' : undefined,
+              }}
+              onClick={() => setMapId(null)}
             >
-              자유 모드
+              지도 선택 안 함
             </button>
-            <button
-              className={playMode === 'restricted' ? 'zr-pace-btn zr-pace-btn-on' : 'zr-pace-btn'}
-              onClick={() => setPlayMode('restricted')}
-            >
-              제한구역 모드
-            </button>
+            {zombieMaps.map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                className="zr-admin-route-chip"
+                style={{
+                  cursor: 'pointer',
+                  font: 'inherit',
+                  borderColor: m.id === mapId ? '#ef5350' : undefined,
+                  background: m.id === mapId ? 'rgba(239, 83, 80, 0.22)' : undefined,
+                  color: m.id === mapId ? '#fff' : undefined,
+                }}
+                onClick={() => setMapId(m.id)}
+              >
+                🗺️ {m.name}
+              </button>
+            ))}
           </div>
-          {playMode === 'restricted' && (
-            <div className="zr-pace-picker">
-              {AREA_RADIUS_PRESETS.map((r, i) => (
+          {mapId ? (
+            <p className="zr-pace-hint">
+              선택하면 참가자 전원이 그 위치(반경 {zombieMaps.find((m) => m.id === mapId)?.radius}m 안)로 이동해야
+              이 경로의 좀비를 만나요. 다같이 그 장소로 모여주세요!
+            </p>
+          ) : (
+            <>
+              <p className="zr-pace-label">플레이 모드</p>
+              <div className="zr-pace-picker zr-pace-picker-2col">
                 <button
-                  key={r}
-                  className={i === radiusIdx ? 'zr-pace-btn zr-pace-btn-on' : 'zr-pace-btn'}
-                  onClick={() => setRadiusIdx(i)}
+                  className={playMode === 'free' ? 'zr-pace-btn zr-pace-btn-on' : 'zr-pace-btn'}
+                  onClick={() => setPlayMode('free')}
                 >
-                  {r >= 1000 ? `${r / 1000}km` : `${r}m`}
+                  자유 모드
                 </button>
-              ))}
-            </div>
+                <button
+                  className={playMode === 'restricted' ? 'zr-pace-btn zr-pace-btn-on' : 'zr-pace-btn'}
+                  onClick={() => setPlayMode('restricted')}
+                >
+                  제한구역 모드
+                </button>
+              </div>
+              {playMode === 'restricted' && (
+                <div className="zr-pace-picker">
+                  {AREA_RADIUS_PRESETS.map((r, i) => (
+                    <button
+                      key={r}
+                      className={i === radiusIdx ? 'zr-pace-btn zr-pace-btn-on' : 'zr-pace-btn'}
+                      onClick={() => setRadiusIdx(i)}
+                    >
+                      {r >= 1000 ? `${r / 1000}km` : `${r}m`}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
           )}
           {error && <p className="zr-error">{error}</p>}
           <button className="zr-btn zr-btn-primary" onClick={createRoom} disabled={busy}>
@@ -283,6 +327,13 @@ export default function RoomLobby({ onBack, onStart }) {
         <h1 className="zr-title">대기실</h1>
         <p className="zr-subtitle">이 코드를 다른 사람들에게 알려주세요</p>
         <div className="zr-room-code">{room?.code}</div>
+        {room?.config?.mapId && (
+          <p className="zr-pace-hint" style={{ textAlign: 'center' }}>
+            🗺️ 선택된 지도: {zombieMaps.find((m) => m.id === room.config.mapId)?.name || '(불러오는 중…)'}
+            <br />
+            참가자 모두 그 장소로 이동해서 시작해주세요!
+          </p>
+        )}
         <p className="zr-pace-label" style={{ marginTop: 18 }}>
           참가자 ({players.length}명)
         </p>

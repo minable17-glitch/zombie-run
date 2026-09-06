@@ -13,6 +13,7 @@ import {
 import { fetchWalkingPath } from './lib/routing.js'
 import { supabase } from './lib/supabaseClient.js'
 import { AREA_RADIUS_PRESETS, DEFAULT_PACE_IDX, DEFAULT_RADIUS_IDX, PACE_PRESETS } from './lib/gameConfig.js'
+import { fetchZombieMaps } from './lib/zombieMaps.js'
 import RoomLobby from './RoomLobby.jsx'
 
 // OpenRouteService 키가 있으면 좀비가 실제 도로/인도 경로를 따라 쫓아오고,
@@ -155,11 +156,11 @@ function stepPatrol(z) {
 
 // 시작 위치가 관리자가 만들어둔 지도의 반경 안이면 그 순찰 경로로 좀비를 배치하고,
 // 아니면 기존 방식(자유/제한구역 모드 + 동적 스폰)을 그대로 씀
-function applyStartSetup(game, startPos, { paceMps, playMode, radiusM, zombieMaps }) {
+function applyStartSetup(game, startPos, { paceMps, playMode, radiusM, zombieMaps, forcedMap }) {
   game.targetPaceMps = paceMps
-  const matched = zombieMaps.find(
-    (m) => haversineDistance(startPos.lat, startPos.lon, m.center.lat, m.center.lon) <= m.radius
-  )
+  const matched =
+    forcedMap ||
+    zombieMaps.find((m) => haversineDistance(startPos.lat, startPos.lon, m.center.lat, m.center.lon) <= m.radius)
   if (matched) {
     game.presetMap = matched
     game.playMode = 'restricted'
@@ -239,22 +240,7 @@ export default function App() {
   }, [])
 
   const refreshZombieMaps = useCallback(async () => {
-    if (!supabase) return
-    try {
-      const { data, error } = await supabase.from('zombie_maps').select('*')
-      if (error || !data) return
-      setZombieMaps(
-        data.map((row) => ({
-          id: row.id,
-          name: row.name,
-          center: { lat: row.center_lat, lon: row.center_lon },
-          radius: row.radius_m,
-          routes: row.routes,
-        }))
-      )
-    } catch {
-      // 네트워크 문제 등으로 실패해도 자유/제한구역 모드로 게임은 그대로 진행됨
-    }
+    setZombieMaps(await fetchZombieMaps())
   }, [])
 
   useEffect(() => {
@@ -575,13 +561,15 @@ export default function App() {
           game.roomId = session.roomId
           game.roomPlayerId = session.playerId
           game.roomNickname = session.nickname
+          const forcedMap = config.mapId ? zombieMaps.find((m) => m.id === config.mapId) : null
           const matched = applyStartSetup(game, startPos, {
             paceMps: PACE_PRESETS[config.paceIdx ?? DEFAULT_PACE_IDX].mps,
             playMode: config.playMode || 'free',
             radiusM: AREA_RADIUS_PRESETS[config.radiusIdx ?? DEFAULT_RADIUS_IDX],
             zombieMaps,
+            forcedMap,
           })
-          if (matched) toast(`이 지역엔 미리 만들어진 좀비 경로가 있어요! (${matched.name}) 🗺️`)
+          if (matched) toast(`방장이 고른 좀비 경로로 시작해요! (${matched.name}) 🗺️`)
           tickIntervalRef.current = setInterval(tick, 1000)
           clearInterval(teammatesPollRef.current)
           pollTeammates()
@@ -676,6 +664,7 @@ export default function App() {
   if (mode === 'room') {
     return (
       <RoomLobby
+        zombieMaps={zombieMaps}
         onBack={() => setMode('game')}
         onStart={(config, session) => {
           setMode('game')

@@ -2,18 +2,9 @@ import { useCallback, useEffect, useState } from 'react'
 import AdminMap from './AdminMap.jsx'
 import { supabase } from './lib/supabaseClient.js'
 import { clampToRadius } from './lib/geo.js'
+import { rowToZombieMap } from './lib/zombieMaps.js'
 
 const DEFAULT_RADIUS_M = 400
-
-function rowToMap(row) {
-  return {
-    id: row.id,
-    name: row.name,
-    center: { lat: row.center_lat, lon: row.center_lon },
-    radius: row.radius_m,
-    routes: row.routes,
-  }
-}
 
 // 관리자가 특정 장소에 좀비가 다닐 경로를 미리 그려서, 그대로 Supabase에 저장하는 화면.
 // 1) 구역(중심+반경)을 먼저 확정하고 2) 그 구역 안에서만 경로를 그리는 2단계 흐름.
@@ -54,7 +45,7 @@ export default function AdminRouteEditor({ onBack, onSaved }) {
         return
       }
       setSavedMapsError('')
-      setSavedMaps((data || []).map(rowToMap))
+      setSavedMaps((data || []).map(rowToZombieMap))
     } catch (e) {
       setSavedMapsError(e?.message || '저장된 지도를 불러오지 못했어요.')
     }
