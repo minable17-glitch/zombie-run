@@ -108,9 +108,18 @@ export default function AdminRouteEditor({ onBack, onSaved }) {
     if (!supabase) return
     if (!window.confirm('이 지도를 삭제할까요? 되돌릴 수 없어요.')) return
     try {
-      const { error } = await supabase.from('zombie_maps').delete().eq('id', id)
+      // .select()를 붙여서 실제로 지워진 행을 돌려받음 — Supabase 삭제 권한(정책)이
+      // 없으면 에러 없이 그냥 0건이 지워지고 조용히 "성공"으로 응답하기 때문에,
+      // error만 확인해서는 이 경우를 못 잡음(그래서 예전엔 삭제가 안 되는데도 티가 안 났음)
+      const { data, error } = await supabase.from('zombie_maps').delete().eq('id', id).select()
       if (error) {
         setSavedMapsError(error.message || '삭제에 실패했어요.')
+        return
+      }
+      if (!data || data.length === 0) {
+        setSavedMapsError(
+          '삭제가 안 됐어요. Supabase에 삭제 권한(정책)이 설정 안 됐을 수 있어요 — supabase/schema.sql을 SQL Editor에서 다시 실행해보세요.'
+        )
         return
       }
     } catch (e) {
