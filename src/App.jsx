@@ -14,6 +14,7 @@ import { fetchWalkingPath } from './lib/routing.js'
 import { supabase } from './lib/supabaseClient.js'
 import { AREA_RADIUS_PRESETS, DEFAULT_PACE_IDX, DEFAULT_RADIUS_IDX, PACE_PRESETS } from './lib/gameConfig.js'
 import { fetchZombieMaps } from './lib/zombieMaps.js'
+import { useBackableStep } from './lib/useBackableStep.js'
 import RoomLobby from './RoomLobby.jsx'
 
 // OpenRouteService 키가 있으면 좀비가 실제 도로/인도 경로를 따라 쫓아오고,
@@ -218,7 +219,7 @@ export default function App() {
   const [, setTick] = useState(0)
   const rerender = useCallback(() => setTick((n) => n + 1), [])
 
-  const [mode, setMode] = useState('game') // 'game' | 'admin' | 'room'
+  const [mode, setMode] = useBackableStep('game') // 'game' | 'admin' | 'room'
   const [zombieMaps, setZombieMaps] = useState([])
   const [geoError, setGeoError] = useState('')
   const [follow, setFollow] = useState(true)

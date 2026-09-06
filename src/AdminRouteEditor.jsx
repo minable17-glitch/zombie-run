@@ -3,6 +3,7 @@ import AdminMap from './AdminMap.jsx'
 import { supabase } from './lib/supabaseClient.js'
 import { clampToRadius } from './lib/geo.js'
 import { rowToZombieMap } from './lib/zombieMaps.js'
+import { useBackableStep } from './lib/useBackableStep.js'
 
 const DEFAULT_RADIUS_M = 400
 
@@ -10,7 +11,7 @@ const DEFAULT_RADIUS_M = 400
 // 1) 구역(중심+반경)을 먼저 확정하고 2) 그 구역 안에서만 경로를 그리는 2단계 흐름.
 // 저장된 지도를 목록에서 불러와 수정하거나 삭제할 수도 있음.
 export default function AdminRouteEditor({ onBack, onSaved }) {
-  const [step, setStep] = useState('area') // 'area' | 'routes'
+  const [step, setStep] = useBackableStep('area') // 'area' | 'routes'
   const [center, setCenter] = useState(null)
   const [geoError, setGeoError] = useState('')
   const [mapName, setMapName] = useState('')
@@ -100,10 +101,16 @@ export default function AdminRouteEditor({ onBack, onSaved }) {
 
   const deleteMap = async (id) => {
     if (!supabase) return
+    if (!window.confirm('이 지도를 삭제할까요? 되돌릴 수 없어요.')) return
     try {
-      await supabase.from('zombie_maps').delete().eq('id', id)
-    } catch {
-      // 무시하고 목록은 다시 불러와서 실제 상태를 보여줌
+      const { error } = await supabase.from('zombie_maps').delete().eq('id', id)
+      if (error) {
+        setSavedMapsError(error.message || '삭제에 실패했어요.')
+        return
+      }
+    } catch (e) {
+      setSavedMapsError(e?.message || '삭제에 실패했어요.')
+      return
     }
     if (editingMapId === id) startNewMap()
     refreshSavedMaps()

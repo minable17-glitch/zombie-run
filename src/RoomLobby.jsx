@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from './lib/supabaseClient.js'
 import { AREA_RADIUS_PRESETS, DEFAULT_PACE_IDX, DEFAULT_RADIUS_IDX, PACE_PRESETS } from './lib/gameConfig.js'
+import { useBackableStep } from './lib/useBackableStep.js'
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // 헷갈리는 0/O, 1/I 제외
 const POLL_MS = 3000
@@ -15,7 +16,7 @@ function randomCode(len = 5) {
 // 방장이 시작을 누르면 전원이 동시에 같은 설정(페이스/모드/지도)으로 게임을 시작하는 화면.
 // "따로 모드": 각자 자기 좀비를 만나지만, 서로의 생존 상태는 주기적으로 공유됨(App.jsx가 담당)
 export default function RoomLobby({ zombieMaps = [], onBack, onStart }) {
-  const [step, setStep] = useState('choose') // 'choose' | 'create' | 'join' | 'waiting'
+  const [step, setStep] = useBackableStep('choose') // 'choose' | 'create' | 'join' | 'waiting'
   const [nickname, setNickname] = useState('')
   const [joinCode, setJoinCode] = useState('')
   const [paceIdx, setPaceIdx] = useState(DEFAULT_PACE_IDX)
