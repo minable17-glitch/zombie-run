@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import AdminMap from './AdminMap.jsx'
-import { supabase } from './lib/supabaseClient.js'
+import { supabase, supabaseProjectRef } from './lib/supabaseClient.js'
 import { clampToRadius, formatDistance, pathLength } from './lib/geo.js'
 import { rowToZombieMap } from './lib/zombieMaps.js'
 import { useBackableStep } from './lib/useBackableStep.js'
@@ -240,6 +240,12 @@ export default function AdminRouteEditor({ onBack, onSaved }) {
                   구역 확정하고 경로 그리기 →
                 </button>
 
+                {supabaseProjectRef && (
+                  <p className="zr-pace-hint" style={{ marginTop: 14, opacity: 0.55 }}>
+                    연결된 저장소: {supabaseProjectRef} (Supabase에서 SQL을 실행할 땐 이 ID와 같은
+                    프로젝트인지 꼭 확인하세요 — Settings → API → Project ID)
+                  </p>
+                )}
                 {savedMapsError && <p className="zr-error">{savedMapsError}</p>}
                 {savedMaps.length > 0 && (
                   <>
