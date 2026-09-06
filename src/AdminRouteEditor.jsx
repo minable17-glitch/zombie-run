@@ -10,7 +10,7 @@ const DEFAULT_RADIUS_M = 400
 // 관리자가 특정 장소에 좀비가 다닐 경로를 미리 그려서, 그대로 Supabase에 저장하는 화면.
 // 1) 구역(중심+반경)을 먼저 확정하고 2) 그 구역 안에서만 경로를 그리는 2단계 흐름.
 // 저장된 지도를 목록에서 불러와 수정하거나 삭제할 수도 있음.
-export default function AdminRouteEditor({ onBack, onSaved }) {
+export default function AdminRouteEditor({ onBack, onSaved, onLogout }) {
   const [step, setStep] = useBackableStep('area') // 'area' | 'routes'
   const [center, setCenter] = useState(null)
   const [geoError, setGeoError] = useState('')
@@ -181,9 +181,16 @@ export default function AdminRouteEditor({ onBack, onSaved }) {
             {step === 'area' ? '구역(중심·반경)을 먼저 정해주세요' : '지도를 탭해서 경로를 그려주세요'}
           </div>
         </div>
-        <button className="zr-round-btn" onClick={() => (step === 'routes' ? setStep('area') : onBack())}>
-          ←
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {onLogout && (
+            <button className="zr-round-btn" style={{ fontSize: 16 }} onClick={onLogout} title="로그아웃">
+              🔓
+            </button>
+          )}
+          <button className="zr-round-btn" onClick={() => (step === 'routes' ? setStep('area') : onBack())}>
+            ←
+          </button>
+        </div>
       </div>
 
       {geoError && (

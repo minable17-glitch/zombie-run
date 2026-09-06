@@ -1,6 +1,11 @@
 -- Supabase 프로젝트의 SQL Editor에서 이 파일 내용을 실행하세요. 여러 번 실행해도 안전합니다
--- (이미 있는 건 건너뛰거나 정책을 다시 만듭니다). 로그인/계정이 없는 개인 프로젝트라서
--- 누구나 읽고 쓸 수 있게 열어뒀어요 (관리자 화면 링크를 아는 사람만 접근한다는 전제).
+-- (이미 있는 건 건너뛰거나 정책을 다시 만듭니다).
+--
+-- zombie_maps는 관리자만 쓸 수 있어야 해서, 읽기(select)는 누구나 가능하지만
+-- 쓰기(insert/update/delete)는 Supabase Auth로 로그인한 사람만 가능하게 해뒀습니다.
+-- 관리자 계정은 Supabase 대시보드 Authentication → Users에서 미리 만들어두세요
+-- (README의 "관리자용 좀비 경로 만들기" 항목 참고). game_rooms/room_players는 로그인
+-- 없이 누구나 방을 만들고 참가하는 기능이라 그대로 열어뒀습니다.
 
 -- ── 관리자가 만든 좀비 순찰 지도 ──
 create table if not exists zombie_maps (
@@ -19,13 +24,16 @@ drop policy if exists "Anyone can read zombie maps" on zombie_maps;
 create policy "Anyone can read zombie maps" on zombie_maps for select using (true);
 
 drop policy if exists "Anyone can add zombie maps" on zombie_maps;
-create policy "Anyone can add zombie maps" on zombie_maps for insert with check (true);
+drop policy if exists "Authenticated can add zombie maps" on zombie_maps;
+create policy "Authenticated can add zombie maps" on zombie_maps for insert with check (auth.role() = 'authenticated');
 
 drop policy if exists "Anyone can edit zombie maps" on zombie_maps;
-create policy "Anyone can edit zombie maps" on zombie_maps for update using (true);
+drop policy if exists "Authenticated can edit zombie maps" on zombie_maps;
+create policy "Authenticated can edit zombie maps" on zombie_maps for update using (auth.role() = 'authenticated');
 
 drop policy if exists "Anyone can delete zombie maps" on zombie_maps;
-create policy "Anyone can delete zombie maps" on zombie_maps for delete using (true);
+drop policy if exists "Authenticated can delete zombie maps" on zombie_maps;
+create policy "Authenticated can delete zombie maps" on zombie_maps for delete using (auth.role() = 'authenticated');
 
 -- ── 그룹으로 같이 뛰기(방) ──
 create table if not exists game_rooms (

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import GameMap from './GameMap.jsx'
 import AdminRouteEditor from './AdminRouteEditor.jsx'
+import AdminLogin from './AdminLogin.jsx'
 import {
   advanceAlongPath,
   bearingTo,
@@ -229,6 +230,28 @@ export default function App() {
   const [teammates, setTeammates] = useState([])
   const [showTeammates, setShowTeammates] = useState(false)
   const teammatesPollRef = useRef(null)
+
+  const [adminSession, setAdminSession] = useState(null)
+  const [adminSessionChecked, setAdminSessionChecked] = useState(false)
+
+  useEffect(() => {
+    if (!supabase) {
+      setAdminSessionChecked(true)
+      return
+    }
+    supabase.auth.getSession().then(({ data }) => {
+      setAdminSession(data.session)
+      setAdminSessionChecked(true)
+    })
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => setAdminSession(session))
+    return () => sub.subscription.unsubscribe()
+  }, [])
+
+  const adminLogout = useCallback(async () => {
+    if (!supabase) return
+    await supabase.auth.signOut()
+    setMode('game')
+  }, [setMode])
 
   const toast = useCallback((msg) => {
     setToastMsg(msg)
@@ -655,7 +678,25 @@ export default function App() {
   }, [game, rerender])
 
   if (mode === 'admin') {
-    return <AdminRouteEditor onBack={() => setMode('game')} onSaved={refreshZombieMaps} />
+    if (supabase && !adminSessionChecked) {
+      return (
+        <div className="zr-screen zr-start">
+          <div className="zr-start-card">
+            <p className="zr-subtitle">확인하는 중…</p>
+          </div>
+        </div>
+      )
+    }
+    if (supabase && !adminSession) {
+      return <AdminLogin onBack={() => setMode('game')} />
+    }
+    return (
+      <AdminRouteEditor
+        onBack={() => setMode('game')}
+        onSaved={refreshZombieMaps}
+        onLogout={supabase ? adminLogout : null}
+      />
+    )
   }
 
   if (mode === 'room') {
