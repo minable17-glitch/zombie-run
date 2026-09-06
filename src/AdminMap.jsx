@@ -55,6 +55,7 @@ export default function AdminMap({ center, radius, routes, currentRoute, onMapCl
       areaCircleRef.current.setLatLng([center.lat, center.lon])
       areaCircleRef.current.setRadius(radius)
     }
+    centerMarkerRef.current?.setLatLng([center.lat, center.lon])
   }, [center, radius])
 
   useEffect(() => {
@@ -81,11 +82,18 @@ export default function AdminMap({ center, radius, routes, currentRoute, onMapCl
           { color: '#fff', weight: 3, dashArray: '6 6' }
         ).addTo(map)
       )
-      for (const p of currentRoute) {
+      currentRoute.forEach((p, i) => {
         currentLayersRef.current.push(
-          L.circleMarker([p.lat, p.lon], { radius: 4, color: '#fff', fillColor: '#fff', fillOpacity: 1 }).addTo(map)
+          L.marker([p.lat, p.lon], {
+            icon: L.divIcon({
+              html: `<div class="zr-point-marker">${i + 1}</div>`,
+              className: '',
+              iconSize: [20, 20],
+              iconAnchor: [10, 10],
+            }),
+          }).addTo(map)
         )
-      }
+      })
     }
   }, [currentRoute])
 

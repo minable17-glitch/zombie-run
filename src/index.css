@@ -407,6 +407,21 @@ body {
   font-size: 20px;
 }
 
+.zr-point-marker {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  color: #0b0f0d;
+  font-size: 11px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid #223028;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
 /* ── 관리자: 좀비 경로 만들기 ── */
 .zr-admin-top {
   display: flex;

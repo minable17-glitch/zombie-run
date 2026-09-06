@@ -78,6 +78,21 @@ export function clampToRadius(point, center, radiusMeters) {
   return destinationPoint(center.lat, center.lon, radiusMeters * 0.9, brng)
 }
 
+// {lat,lon} 점들을 순서대로 이었을 때의 총 길이(미터)
+export function pathLength(points) {
+  let total = 0
+  for (let i = 1; i < points.length; i++) {
+    total += haversineDistance(points[i - 1].lat, points[i - 1].lon, points[i].lat, points[i].lon)
+  }
+  return total
+}
+
+// 미터 단위 거리를 "320m" 또는 "1.2km" 같은 표시용 문자열로
+export function formatDistance(meters) {
+  if (meters < 1000) return `${Math.round(meters)}m`
+  return `${(meters / 1000).toFixed(2)}km`
+}
+
 // {lat,lon} 배열로 된 경로를 distanceMeters만큼 따라 이동.
 // 새 위치와, 그 지점부터 남은 경로(먼저 지나온 구간은 잘라낸)를 반환 (도로 경로를 따라가는 좀비 이동용)
 export function advanceAlongPath(path, distanceMeters) {

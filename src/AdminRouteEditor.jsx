@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import AdminMap from './AdminMap.jsx'
 import { supabase } from './lib/supabaseClient.js'
-import { clampToRadius } from './lib/geo.js'
+import { clampToRadius, formatDistance, pathLength } from './lib/geo.js'
 import { rowToZombieMap } from './lib/zombieMaps.js'
 import { useBackableStep } from './lib/useBackableStep.js'
 
@@ -58,7 +58,11 @@ export default function AdminRouteEditor({ onBack, onSaved }) {
 
   const handleMapClick = useCallback(
     (point) => {
-      if (step !== 'routes' || !center) return
+      if (!center) return
+      if (step === 'area') {
+        setCenter(point)
+        return
+      }
       const clamped = clampToRadius(point, center, radius)
       setCurrentRoute((prev) => [...prev, clamped])
     },
@@ -66,6 +70,7 @@ export default function AdminRouteEditor({ onBack, onSaved }) {
   )
 
   const undoPoint = () => setCurrentRoute((prev) => prev.slice(0, -1))
+  const cancelCurrentRoute = () => setCurrentRoute([])
 
   const finishRoute = () => {
     if (currentRoute.length < 2) return
@@ -167,7 +172,7 @@ export default function AdminRouteEditor({ onBack, onSaved }) {
             {step === 'area' ? '구역(중심·반경)을 먼저 정해주세요' : '지도를 탭해서 경로를 그려주세요'}
           </div>
         </div>
-        <button className="zr-round-btn" onClick={onBack}>
+        <button className="zr-round-btn" onClick={() => (step === 'routes' ? setStep('area') : onBack())}>
           ←
         </button>
       </div>
@@ -218,7 +223,9 @@ export default function AdminRouteEditor({ onBack, onSaved }) {
                   />
                 </div>
                 <p className="zr-pace-hint" style={{ margin: '4px 0' }}>
-                  빨간 원이 실제 플레이 구역이에요. 확정하면 이 안에서만 경로를 그릴 수 있어요.
+                  빨간 원이 실제 플레이 구역이에요. 꼭 지금 있는 위치가 아니어도 돼요 — 지도를 손가락으로
+                  움직이거나 확대/축소해서 원하는 곳으로 이동한 뒤, 그 위치를 탭하면 중심(🏁)이 거기로
+                  옮겨져요. 확정하면 이 안에서만 경로를 그릴 수 있어요.
                 </p>
                 <button className="zr-btn zr-btn-primary" onClick={confirmArea}>
                   구역 확정하고 경로 그리기 →
@@ -260,6 +267,13 @@ export default function AdminRouteEditor({ onBack, onSaved }) {
                   <button className="zr-btn zr-btn-ghost zr-btn-small" onClick={undoPoint} disabled={!currentRoute.length}>
                     점 취소
                   </button>
+                  <button
+                    className="zr-btn zr-btn-ghost zr-btn-small"
+                    onClick={cancelCurrentRoute}
+                    disabled={!currentRoute.length}
+                  >
+                    이 경로 취소
+                  </button>
                   <button className="zr-btn zr-btn-ghost zr-btn-small" onClick={finishRoute} disabled={currentRoute.length < 2}>
                     이 경로 완료 ({currentRoute.length}점)
                   </button>
@@ -267,11 +281,18 @@ export default function AdminRouteEditor({ onBack, onSaved }) {
                     경로 전체 초기화
                   </button>
                 </div>
+                {currentRoute.length >= 2 && (
+                  <p className="zr-pace-hint" style={{ margin: '0 0 10px' }}>
+                    📏 지금 그리는 경로 거리: <strong>{formatDistance(pathLength(currentRoute))}</strong> (
+                    {currentRoute.length}점) — 잘못 찍었으면 "점 취소"로 마지막 점만, "이 경로 취소"로 지금
+                    그리는 경로를 통째로 지울 수 있어요.
+                  </p>
+                )}
                 {routes.length > 0 && (
                   <div className="zr-admin-route-list">
                     {routes.map((route, i) => (
                       <span key={i} className="zr-admin-route-chip">
-                        경로 {i + 1} ({route.length}점)
+                        경로 {i + 1} ({formatDistance(pathLength(route))})
                         <button onClick={() => removeRoute(i)}>✕</button>
                       </span>
                     ))}

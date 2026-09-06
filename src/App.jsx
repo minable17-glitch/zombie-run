@@ -5,6 +5,7 @@ import {
   advanceAlongPath,
   bearingTo,
   clampToRadius,
+  formatDistance,
   haversineDistance,
   moveToward,
   randomPointInDirection,
@@ -65,11 +66,6 @@ function formatTime(totalSec) {
   const m = Math.floor(totalSec / 60)
   const s = totalSec % 60
   return `${m}:${String(s).padStart(2, '0')}`
-}
-
-function formatDistance(meters) {
-  if (meters < 1000) return `${Math.round(meters)}m`
-  return `${(meters / 1000).toFixed(2)}km`
 }
 
 function formatPace(mps) {
