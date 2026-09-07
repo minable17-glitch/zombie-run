@@ -23,6 +23,10 @@ create table if not exists public.profiles (
 
 alter table public.profiles enable row level security;
 
+-- 이미 대소문자가 섞인 채로 저장된 아이디가 있으면 소문자로 맞춰줌(폰 자동 대문자화 때문에
+-- 가입 때와 로그인 때 입력이 서로 다른 문자열이 되어 로그인이 안 되던 문제의 재발 방지)
+update public.profiles set username = lower(username) where username <> lower(username);
+
 -- 로그인/비번찾기 화면에서 "아이디 → 이메일"을 찾아야 해서 로그인 없이도 읽을 수 있게 열어둠.
 -- (아이디로 가입한 사람의 이메일이 남에게 노출될 수 있다는 뜻이라, 개인 프로젝트/학교용처럼
 -- 신뢰할 수 있는 소규모 사용자만 쓰는 걸 전제로 함)
@@ -37,7 +41,7 @@ set search_path = public
 as $$
 begin
   insert into public.profiles (id, username, email)
-  values (new.id, new.raw_user_meta_data->>'username', new.email)
+  values (new.id, lower(new.raw_user_meta_data->>'username'), new.email)
   on conflict (id) do nothing;
   return new;
 end;

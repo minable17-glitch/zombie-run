@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { supabase } from './lib/supabaseClient.js'
-import { isUsernameTaken, lookupEmailByUsername, siteUrl } from './lib/authHelpers.js'
+import { isUsernameTaken, lookupEmailByUsername, normalizeUsername, siteUrl } from './lib/authHelpers.js'
 
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/
 
@@ -54,7 +54,7 @@ export default function AuthScreen({ onBack }) {
       setError('아이디, 이메일, 비밀번호를 모두 입력해주세요.')
       return
     }
-    if (!USERNAME_RE.test(username.trim())) {
+    if (!USERNAME_RE.test(normalizeUsername(username))) {
       setError('아이디는 영문/숫자/밑줄(_)로 3~20자여야 해요.')
       return
     }
@@ -72,7 +72,9 @@ export default function AuthScreen({ onBack }) {
       const { data, error: signupError } = await supabase.auth.signUp({
         email: email.trim(),
         password,
-        options: { data: { username: username.trim() } },
+        // 아이디는 항상 소문자로 저장 — 폰 키보드의 자동 대문자화 때문에 가입 때와
+        // 로그인 때 입력값이 실제로 달라져서 "존재하지 않는 아이디"로 보이는 걸 방지
+        options: { data: { username: normalizeUsername(username) } },
       })
       if (signupError) {
         setError(signupError.message)
@@ -150,6 +152,9 @@ export default function AuthScreen({ onBack }) {
           type="text"
           placeholder="아이디 (영문/숫자/밑줄 3~20자)"
           autoComplete="username"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
           value={username}
           onChange={(e) => setUsername(e.target.value)}
         />
