@@ -8,6 +8,46 @@
 -- 바로 할 수 있습니다. game_rooms/room_players는 로그인 없이 누구나 방을 만들고 참가하는
 -- 기능이라 그대로 열어뒀습니다.
 
+-- ── 아이디(username) 로그인용 매핑 테이블 ──
+-- Supabase Auth는 원래 이메일로 로그인하지만, 이 앱은 "아이디"로 로그인하게 하고
+-- 싶어서 아이디→이메일 매핑을 여기 저장해둠. 로그인할 때 이 테이블에서 이메일을
+-- 찾아서 그 이메일로 실제 로그인을 하고, 비밀번호를 잊어버렸을 때도 이 테이블에서
+-- 이메일을 찾아 그 주소로 재설정 메일을 보냄. 회원가입하면 아래 트리거가 자동으로
+-- 이 테이블에 한 줄을 채워줌(따로 코드로 만들 필요 없음).
+create table if not exists public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  username text unique not null,
+  email text not null,
+  created_at timestamptz not null default now()
+);
+
+alter table public.profiles enable row level security;
+
+-- 로그인/비번찾기 화면에서 "아이디 → 이메일"을 찾아야 해서 로그인 없이도 읽을 수 있게 열어둠.
+-- (아이디로 가입한 사람의 이메일이 남에게 노출될 수 있다는 뜻이라, 개인 프로젝트/학교용처럼
+-- 신뢰할 수 있는 소규모 사용자만 쓰는 걸 전제로 함)
+drop policy if exists "Anyone can look up username" on public.profiles;
+create policy "Anyone can look up username" on public.profiles for select using (true);
+
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.profiles (id, username, email)
+  values (new.id, new.raw_user_meta_data->>'username', new.email)
+  on conflict (id) do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
 -- ── 사용자가 만든 좀비 순찰 지도 ──
 create table if not exists zombie_maps (
   id uuid primary key default gen_random_uuid(),

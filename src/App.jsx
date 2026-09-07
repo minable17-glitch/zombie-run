@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import GameMap from './GameMap.jsx'
 import AdminRouteEditor from './AdminRouteEditor.jsx'
 import AuthScreen from './AuthScreen.jsx'
+import ResetPassword from './ResetPassword.jsx'
 import {
   advanceAlongPath,
   bearingTo,
@@ -233,6 +234,7 @@ export default function App() {
 
   const [adminSession, setAdminSession] = useState(null)
   const [adminSessionChecked, setAdminSessionChecked] = useState(false)
+  const [passwordRecovery, setPasswordRecovery] = useState(false)
 
   useEffect(() => {
     if (!supabase) {
@@ -243,7 +245,11 @@ export default function App() {
       setAdminSession(data.session)
       setAdminSessionChecked(true)
     })
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => setAdminSession(session))
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      setAdminSession(session)
+      // 비밀번호 재설정 메일의 링크를 눌러서 돌아온 경우 — 새 비밀번호 설정 화면을 띄움
+      if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true)
+    })
     return () => sub.subscription.unsubscribe()
   }, [])
 
@@ -676,6 +682,10 @@ export default function App() {
     game.lastPos = keepPos
     rerender()
   }, [game, rerender])
+
+  if (passwordRecovery) {
+    return <ResetPassword onDone={() => setPasswordRecovery(false)} />
+  }
 
   if (mode === 'admin') {
     if (supabase && !adminSessionChecked) {
