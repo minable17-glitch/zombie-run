@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import GameMap from './GameMap.jsx'
 import AdminRouteEditor from './AdminRouteEditor.jsx'
-import AdminLogin from './AdminLogin.jsx'
+import AuthScreen from './AuthScreen.jsx'
 import {
   advanceAlongPath,
   bearingTo,
@@ -688,13 +688,14 @@ export default function App() {
       )
     }
     if (supabase && !adminSession) {
-      return <AdminLogin onBack={() => setMode('game')} />
+      return <AuthScreen onBack={() => setMode('game')} />
     }
     return (
       <AdminRouteEditor
         onBack={() => setMode('game')}
         onSaved={refreshZombieMaps}
         onLogout={supabase ? adminLogout : null}
+        session={adminSession}
       />
     )
   }
@@ -780,7 +781,7 @@ export default function App() {
             👥 그룹으로 같이 뛰기
           </button>
           <button className="zr-admin-link" onClick={() => setMode('admin')}>
-            🛠️ 관리자: 좀비 경로 만들기
+            🛠️ 내 좀비 경로 만들기 (로그인 필요)
           </button>
         </div>
       </div>

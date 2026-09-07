@@ -172,7 +172,7 @@ export default function RoomLobby({ zombieMaps = [], onBack, onStart }) {
             좀비를 만나지만, 서로의 거리·생존 상태는 실시간으로 볼 수 있어요.
           </p>
           <button className="zr-btn zr-btn-primary" onClick={() => setStep('create')}>
-            방 만들기 (관리자)
+            방 만들기 (방장)
           </button>
           <button className="zr-btn zr-btn-ghost" onClick={() => setStep('join')}>
             코드로 참가하기
@@ -208,7 +208,7 @@ export default function RoomLobby({ zombieMaps = [], onBack, onStart }) {
               </button>
             ))}
           </div>
-          <p className="zr-pace-label">좀비 경로 (관리자가 만들어둔 지도, 선택 사항)</p>
+          <p className="zr-pace-label">좀비 경로 (누군가 만들어둔 지도, 선택 사항)</p>
           <div className="zr-admin-route-list">
             <button
               type="button"

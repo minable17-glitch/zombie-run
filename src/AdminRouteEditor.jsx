@@ -7,10 +7,12 @@ import { useBackableStep } from './lib/useBackableStep.js'
 
 const DEFAULT_RADIUS_M = 400
 
-// 관리자가 특정 장소에 좀비가 다닐 경로를 미리 그려서, 그대로 Supabase에 저장하는 화면.
+// 로그인한 사용자가 특정 장소에 좀비가 다닐 경로를 미리 그려서, 그대로 Supabase에 저장하는 화면.
 // 1) 구역(중심+반경)을 먼저 확정하고 2) 그 구역 안에서만 경로를 그리는 2단계 흐름.
-// 저장된 지도를 목록에서 불러와 수정하거나 삭제할 수도 있음.
-export default function AdminRouteEditor({ onBack, onSaved, onLogout }) {
+// 내가 만든 지도만 목록에서 불러와 수정하거나 삭제할 수 있음(다른 사람이 만든 지도는 게임에서
+// 쓸 수만 있고 여기서 편집은 못 함).
+export default function AdminRouteEditor({ onBack, onSaved, onLogout, session }) {
+  const userId = session?.user?.id ?? null
   const [step, setStep] = useBackableStep('area') // 'area' | 'routes'
   const [center, setCenter] = useState(null)
   const [geoError, setGeoError] = useState('')
@@ -40,7 +42,10 @@ export default function AdminRouteEditor({ onBack, onSaved, onLogout }) {
   const refreshSavedMaps = useCallback(async () => {
     if (!supabase) return
     try {
-      const { data, error } = await supabase.from('zombie_maps').select('*').order('created_at', { ascending: false })
+      let query = supabase.from('zombie_maps').select('*').order('created_at', { ascending: false })
+      // 로그인한 사용자에게는 본인이 만든 지도만 보여줌 — 수정/삭제도 본인 것만 가능하기 때문
+      if (userId) query = query.eq('owner_id', userId)
+      const { data, error } = await query
       if (error) {
         setSavedMapsError(error.message)
         return
@@ -50,7 +55,7 @@ export default function AdminRouteEditor({ onBack, onSaved, onLogout }) {
     } catch (e) {
       setSavedMapsError(e?.message || '저장된 지도를 불러오지 못했어요.')
     }
-  }, [])
+  }, [userId])
 
   useEffect(() => {
     refreshSavedMaps()
@@ -151,6 +156,7 @@ export default function AdminRouteEditor({ onBack, onSaved, onLogout }) {
       center_lon: center.lon,
       radius_m: radius,
       routes: allRoutes,
+      ...(userId ? { owner_id: userId } : {}),
     }
     let error = null
     try {
@@ -176,7 +182,7 @@ export default function AdminRouteEditor({ onBack, onSaved, onLogout }) {
     <div className="zr-screen">
       <div className="zr-hud-top zr-admin-top">
         <div>
-          <div className="zr-hud-label">관리자: 좀비 경로 만들기</div>
+          <div className="zr-hud-label">내 좀비 경로 만들기</div>
           <div className="zr-hud-value" style={{ fontSize: 13 }}>
             {step === 'area' ? '구역(중심·반경)을 먼저 정해주세요' : '지도를 탭해서 경로를 그려주세요'}
           </div>
@@ -257,7 +263,7 @@ export default function AdminRouteEditor({ onBack, onSaved, onLogout }) {
                 {savedMaps.length > 0 && (
                   <>
                     <p className="zr-pace-label" style={{ marginTop: 14 }}>
-                      저장된 지도
+                      내가 만든 지도
                     </p>
                     <div className="zr-admin-route-list">
                       {savedMaps.map((m) => (
