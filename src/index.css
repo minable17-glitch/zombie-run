@@ -245,36 +245,6 @@ body {
   filter: none;
 }
 
-.zr-gauge {
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  border: 2px solid #34443b;
-  background: rgba(10, 14, 12, 0.82);
-  color: #cfe0d6;
-  font-size: 13px;
-  font-weight: 800;
-  cursor: not-allowed;
-}
-
-.zr-gauge-ready {
-  border-color: #ffd54f;
-  color: #ffd54f;
-  background: rgba(120, 90, 0, 0.35);
-  cursor: pointer;
-  animation: zr-pulse 1s infinite;
-}
-
-@keyframes zr-pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 rgba(255, 213, 79, 0.5);
-  }
-  50% {
-    box-shadow: 0 0 0 10px rgba(255, 213, 79, 0);
-  }
-}
-
 .zr-hud-bottom {
   position: absolute;
   bottom: calc(14px + env(safe-area-inset-bottom));

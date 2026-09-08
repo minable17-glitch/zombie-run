@@ -27,17 +27,13 @@ const REROUTE_INTERVAL_MS = 15000 // 좀비 하나당 최소 이 간격마다만
 const REROUTE_MIN_TARGET_SHIFT_M = 60 // 마지막으로 경로를 요청했을 때보다 플레이어가 이만큼 움직이면 재요청
 
 const CATCH_RADIUS_M = 12 // 이 거리 안으로 좀비가 들어오면 붙잡힘
-const SHOOT_RADIUS_M = 35 // 이 거리 안의 좀비만 탭해서 처치 가능
 const PICKUP_RADIUS_M = 15 // 이 거리 안으로 걸어가면 아이템 자동 획득
-const ULTIMATE_RADIUS_M = 200 // 궁극기가 미치는 범위
 const FIRST_WAVE_SEC = 60
 const NEXT_WAVE_SEC = 90
 // 러닝을 재밌게 만드는 게 목적이라 좀비 무리 규모는 적당히만 (한 번에 최대 이 마리 수까지만 동시에 존재)
 const WAVE_SIZE_MIN = 1
 const WAVE_SIZE_MAX = 2
 const MAX_CONCURRENT_ZOMBIES = 4
-const START_AMMO = 3
-const MAX_AMMO = 12
 const START_HEALTH = 6
 
 // 목표보다 느리게 뛰면 좀비가 따라잡고, 유지/추월하면 거리가 벌어지는 방식 (프리셋은 lib/gameConfig.js)
@@ -85,16 +81,12 @@ function makeInitialGame() {
     lastPos: null,
     distance: 0,
     elapsedSec: 0,
-    ammo: START_AMMO,
     health: START_HEALTH,
-    score: 0,
-    gauge: 0,
     frozenUntil: 0,
     zombies: [],
     pickups: [],
     waveCount: 0,
     nextWaveSec: FIRST_WAVE_SEC,
-    ultimateCooldownUntil: 0,
     gameOverReason: null,
     targetPaceMps: PACE_PRESETS[DEFAULT_PACE_IDX].mps,
     paceSamples: [], // 실시간 페이스 계산용 { t, d } 샘플 (최근 LIVE_PACE_WINDOW_MS만 유지)
@@ -153,6 +145,21 @@ function stepPatrol(z) {
   return { lat, lon, patrolIndex, patrolDir }
 }
 
+// route(좌표 배열)에서 pos와 가장 가까운 점의 인덱스를 찾음 — 순찰 좀비를 경로의 맨 처음이
+// 아니라 지금 플레이어 위치에서 가장 가까운 지점부터 시작하게 하려고 씀
+function closestRouteIndex(route, pos) {
+  let bestIdx = 0
+  let bestDist = Infinity
+  route.forEach((p, i) => {
+    const d = haversineDistance(pos.lat, pos.lon, p.lat, p.lon)
+    if (d < bestDist) {
+      bestDist = d
+      bestIdx = i
+    }
+  })
+  return bestIdx
+}
+
 // 시작 위치가 관리자가 만들어둔 지도의 반경 안이면 그 순찰 경로로 좀비를 배치하고,
 // 아니면 기존 방식(자유/제한구역 모드 + 동적 스폰)을 그대로 씀
 function applyStartSetup(game, startPos, { paceMps, playMode, radiusM, zombieMaps, forcedMap }) {
@@ -165,21 +172,26 @@ function applyStartSetup(game, startPos, { paceMps, playMode, radiusM, zombieMap
     game.playMode = 'restricted'
     game.areaCenter = matched.center
     game.areaRadius = matched.radius
-    game.zombies = matched.routes.map((route, i) => ({
-      id: `preset_${matched.id}_${i}_${Date.now()}`,
-      lat: route[0].lat,
-      lon: route[0].lon,
-      speed: paceMps * (0.9 + Math.random() * 0.2),
-      path: null,
-      pathFetchedFor: null,
-      lastRouteAt: 0,
-      routing: false,
-      patrolRoute: route,
-      patrolIndex: route.length > 1 ? 1 : 0,
-      patrolDir: 1,
-      state: 'patrol',
-      chaseHome: null,
-    }))
+    game.zombies = matched.routes.map((route, i) => {
+      // 경로의 맨 처음 점이 아니라, 지금 내 위치에서 가장 가까운 지점부터 순찰을 시작하게 함
+      const startIdx = closestRouteIndex(route, startPos)
+      const patrolDir = startIdx >= route.length - 1 ? -1 : 1
+      return {
+        id: `preset_${matched.id}_${i}_${Date.now()}`,
+        lat: route[startIdx].lat,
+        lon: route[startIdx].lon,
+        speed: paceMps * (0.9 + Math.random() * 0.2),
+        path: null,
+        pathFetchedFor: null,
+        lastRouteAt: 0,
+        routing: false,
+        patrolRoute: route,
+        patrolIndex: route.length > 1 ? startIdx + patrolDir : startIdx,
+        patrolDir,
+        state: 'patrol',
+        chaseHome: null,
+      }
+    })
   } else {
     game.presetMap = null
     game.playMode = playMode
@@ -201,7 +213,6 @@ function pushRoomStat(game, status) {
         .update({
           distance_m: game.distance,
           health: game.health,
-          score: game.score,
           status,
           updated_at: new Date().toISOString(),
         })
@@ -333,9 +344,6 @@ export default function App() {
       game.nextWaveSec = game.elapsedSec + NEXT_WAVE_SEC
     }
 
-    if (game.playerPos && game.elapsedSec % 45 === 0 && !game.pickups.some((p) => p.type === 'ammo')) {
-      spawnPickup('ammo')
-    }
     if (game.playerPos && game.elapsedSec % 70 === 0 && !game.pickups.some((p) => p.type === 'hourglass')) {
       spawnPickup('hourglass')
     }
@@ -428,13 +436,8 @@ export default function App() {
       for (const p of game.pickups) {
         const d = haversineDistance(game.playerPos.lat, game.playerPos.lon, p.lat, p.lon)
         if (d < PICKUP_RADIUS_M) {
-          if (p.type === 'ammo') {
-            game.ammo = Math.min(MAX_AMMO, game.ammo + 4)
-            toast('탄약 상자 발견! +4 🔫')
-          } else {
-            game.frozenUntil = Date.now() + 10000
-            toast('모래시계 발동! 좀비가 10초간 멈춰요 ⏳')
-          }
+          game.frozenUntil = Date.now() + 10000
+          toast('모래시계 발동! 좀비가 10초간 멈춰요 ⏳')
         } else {
           remaining.push(p)
         }
@@ -479,7 +482,6 @@ export default function App() {
         const d = haversineDistance(game.lastPos.lat, game.lastPos.lon, newPos.lat, newPos.lon)
         if (d >= 0.5 && d <= 30) {
           game.distance += d
-          game.gauge = Math.min(100, game.gauge + d * 0.15)
         }
       }
       game.lastPos = newPos
@@ -609,49 +611,6 @@ export default function App() {
     [game, handlePosition, tick, rerender, zombieMaps, toast, pollTeammates]
   )
 
-  const shootZombie = useCallback(
-    (id) => {
-      if (game.status !== 'playing') return
-      if (game.ammo <= 0) {
-        toast('탄약이 없어요! 탄약 상자를 찾아보세요 📦')
-        return
-      }
-      const z = game.zombies.find((zz) => zz.id === id)
-      if (!z || !game.playerPos) return
-      const d = haversineDistance(game.playerPos.lat, game.playerPos.lon, z.lat, z.lon)
-      if (d > SHOOT_RADIUS_M) {
-        toast(`너무 멀어요! (${Math.round(d)}m)`)
-        return
-      }
-      game.zombies = game.zombies.filter((zz) => zz.id !== id)
-      game.ammo -= 1
-      game.score += 1
-      toast('좀비 처치! 💀')
-      rerender()
-    },
-    [game, toast, rerender]
-  )
-
-  const useUltimate = useCallback(() => {
-    if (game.status !== 'playing') return
-    if (game.gauge < 100) return
-    const now = Date.now()
-    if (now < game.ultimateCooldownUntil) return
-    if (!game.playerPos) return
-    let killed = 0
-    game.zombies = game.zombies.filter((z) => {
-      const d = haversineDistance(game.playerPos.lat, game.playerPos.lon, z.lat, z.lon)
-      const inRange = d <= ULTIMATE_RADIUS_M
-      if (inRange) killed += 1
-      return !inRange
-    })
-    game.gauge = 0
-    game.ultimateCooldownUntil = now + 5000
-    game.score += killed
-    toast(killed > 0 ? `궁극기 발동! 좀비 ${killed}마리 제거! ⚡` : '궁극기 발동! (주변에 좀비가 없어요)')
-    rerender()
-  }, [game, toast, rerender])
-
   const finishRun = useCallback(() => endGame('manual'), [endGame])
 
   const restart = useCallback(() => {
@@ -731,11 +690,9 @@ export default function App() {
           <p className="zr-subtitle">실제 GPS를 쓰기 때문에, 살아남는 방법은 진짜로 뛰는 것뿐입니다.</p>
           <ul className="zr-rules">
             <li>러닝 시작 60초 뒤, 좀비 무리 등장</li>
-            <li>기본 총알 3발</li>
-            <li>좀비를 탭해서 처치 (가까이 있어야 함)</li>
-            <li>탄약 상자(📦)로 재장전</li>
+            <li>좀비에게 12m 안으로 붙잡히면 생명이 줄어요</li>
             <li>모래시계(⏳) 아이템으로 좀비 10초간 정지</li>
-            <li>달릴수록 게이지가 차서 궁극기 발동</li>
+            <li>오직 도망치는 것만이 살아남는 방법!</li>
           </ul>
           <p className="zr-pace-label">목표 페이스 (좀비가 이 속도로 쫓아와요)</p>
           <div className="zr-pace-picker">
@@ -818,10 +775,6 @@ export default function App() {
               <div className="zr-result-num">{formatDistance(game.distance)}</div>
               <div className="zr-result-label">달린 거리</div>
             </div>
-            <div>
-              <div className="zr-result-num">{game.score}</div>
-              <div className="zr-result-label">처치한 좀비</div>
-            </div>
           </div>
           <button className="zr-btn zr-btn-primary" onClick={restart}>
             다시 도전하기
@@ -840,7 +793,6 @@ export default function App() {
       )
     : null
   const frozenActive = Date.now() < game.frozenUntil
-  const ultimateReady = game.gauge >= 100 && Date.now() >= game.ultimateCooldownUntil
   let livePaceMps = null
   if (game.paceSamples.length >= 2) {
     const first = game.paceSamples[0]
@@ -882,14 +834,12 @@ export default function App() {
         playerPos={game.playerPos}
         zombies={game.zombies}
         pickups={game.pickups}
-        onShootZombie={shootZombie}
         follow={follow}
         areaCenter={game.areaCenter}
         areaRadius={game.areaRadius}
       />
 
       <div className="zr-hud-side">
-        <div className="zr-badge">🔫 {game.ammo}</div>
         <div className="zr-hearts">
           {Array.from({ length: START_HEALTH }).map((_, i) => (
             <span key={i} className={i < game.health ? 'zr-heart zr-heart-on' : 'zr-heart'}>
@@ -897,14 +847,6 @@ export default function App() {
             </span>
           ))}
         </div>
-        <button
-          className={ultimateReady ? 'zr-gauge zr-gauge-ready' : 'zr-gauge'}
-          onClick={useUltimate}
-          disabled={!ultimateReady}
-        >
-          ⚡{Math.floor(game.gauge)}
-        </button>
-        <div className="zr-badge">💀 {game.score}</div>
         {game.roomId && (
           <button className="zr-badge" onClick={() => setShowTeammates((v) => !v)}>
             👥 {teammates.length}

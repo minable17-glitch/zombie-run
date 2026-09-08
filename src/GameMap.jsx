@@ -10,7 +10,7 @@ function iconHtml(emoji, className) {
 
 // 지도는 마운트될 때 한 번만 만들고, 이후에는 플레이어/좀비/아이템 마커만
 // leaflet을 직접 조작해서 갱신함 (React 리렌더마다 지도를 새로 만들면 깜빡이고 무거워짐)
-export default function GameMap({ playerPos, zombies, pickups, onShootZombie, follow, areaCenter, areaRadius }) {
+export default function GameMap({ playerPos, zombies, pickups, follow, areaCenter, areaRadius }) {
   const containerRef = useRef(null)
   const mapRef = useRef(null)
   const playerMarkerRef = useRef(null)
@@ -72,7 +72,6 @@ export default function GameMap({ playerPos, zombies, pickups, onShootZombie, fo
           iconAnchor: [16, 16],
         })
         marker = L.marker([z.lat, z.lon], { icon }).addTo(map)
-        marker.on('click', () => onShootZombie(z.id))
         zombieMarkersRef.current.set(z.id, marker)
       } else {
         marker.setLatLng([z.lat, z.lon])
@@ -84,7 +83,7 @@ export default function GameMap({ playerPos, zombies, pickups, onShootZombie, fo
         zombieMarkersRef.current.delete(id)
       }
     }
-  }, [zombies, onShootZombie])
+  }, [zombies])
 
   useEffect(() => {
     const map = mapRef.current
@@ -93,9 +92,8 @@ export default function GameMap({ playerPos, zombies, pickups, onShootZombie, fo
     for (const p of pickups) {
       seen.add(p.id)
       if (pickupMarkersRef.current.has(p.id)) continue
-      const emoji = p.type === 'ammo' ? '📦' : '⏳'
       const icon = L.divIcon({
-        html: iconHtml(emoji, `zr-marker-pickup zr-marker-${p.type}`),
+        html: iconHtml('⏳', `zr-marker-pickup zr-marker-${p.type}`),
         className: '',
         iconSize: [28, 28],
         iconAnchor: [14, 14],
