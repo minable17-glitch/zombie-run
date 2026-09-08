@@ -199,6 +199,12 @@ body {
   width: 100%;
 }
 
+/* 키가 필요 없는 기본 OSM 타일을 CSS로 반전시켜 어두운 지도처럼 보이게 함
+   (마커/원/경로선은 별도 레이어라 이 필터의 영향을 안 받음) */
+.zr-map .leaflet-tile-pane {
+  filter: invert(100%) hue-rotate(180deg) brightness(0.95) contrast(0.85) saturate(0.8);
+}
+
 .zr-hud-side {
   position: absolute;
   top: 90px;

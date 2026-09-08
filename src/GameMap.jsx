@@ -1,11 +1,10 @@
 import { useEffect, useRef } from 'react'
 import L from 'leaflet'
 
-// 기본 OSM 타일이 너무 밝고 화려해서 유치해 보인다는 피드백 — CARTO의 무료 다크 테마로 교체
-// (API 키 없이 쓸 수 있음). 어두운 배경 위에 빨간 구역 표시/마커가 훨씬 또렷하게 보임
-const TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-const TILE_ATTR =
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+// CARTO 다크 타일은 이제 API 키가 있어야 해서(무료 익명 사용 중단), 대신 키가 필요 없는
+// 기본 OSM 타일을 그대로 쓰고 CSS 필터로 어둡게 반전시킴 (index.css의 .zr-map 규칙 참고)
+const TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
+const TILE_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
 
 function iconHtml(emoji, className) {
   return `<div class="zr-marker ${className}">${emoji}</div>`
@@ -27,7 +26,7 @@ export default function GameMap({ playerPos, zombies, pickups, follow, areaCente
       zoomControl: false,
       attributionControl: true,
     }).setView([37.5665, 126.978], 17)
-    L.tileLayer(TILE_URL, { maxZoom: 20, attribution: TILE_ATTR, detectRetina: true }).addTo(map)
+    L.tileLayer(TILE_URL, { maxZoom: 19, attribution: TILE_ATTR }).addTo(map)
     mapRef.current = map
     return () => {
       map.remove()

@@ -1,10 +1,9 @@
 import { useEffect, useRef } from 'react'
 import L from 'leaflet'
 
-// GameMap과 같은 다크 테마 타일(CARTO, API 키 불필요)을 써서 앱 전체 느낌을 통일함
-const TILE_URL = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-const TILE_ATTR =
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+// GameMap과 동일: 키가 필요 없는 OSM 타일을 CSS 필터로 어둡게 반전시켜 씀 (index.css 참고)
+const TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
+const TILE_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
 const ROUTE_COLORS = ['#ef5350', '#42a5f5', '#66bb6a', '#ffca28', '#ab47bc', '#26c6da']
 
 // 관리자가 지도를 탭해서 좀비 경로(좌표 배열)를 그리는 화면.
@@ -25,7 +24,7 @@ export default function AdminMap({ center, radius, routes, currentRoute, onMapCl
       [center.lat, center.lon],
       17
     )
-    L.tileLayer(TILE_URL, { maxZoom: 20, attribution: TILE_ATTR, detectRetina: true }).addTo(map)
+    L.tileLayer(TILE_URL, { maxZoom: 19, attribution: TILE_ATTR }).addTo(map)
     map.on('click', (e) => onMapClickRef.current({ lat: e.latlng.lat, lon: e.latlng.lng }))
     mapRef.current = map
     centerMarkerRef.current = L.marker([center.lat, center.lon], {
