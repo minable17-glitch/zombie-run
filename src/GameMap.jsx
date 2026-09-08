@@ -68,7 +68,7 @@ export default function GameMap({ playerPos, zombies, pickups, follow, areaCente
       let marker = zombieMarkersRef.current.get(z.id)
       if (!marker) {
         const icon = L.divIcon({
-          html: iconHtml('🧟', 'zr-marker-zombie'),
+          html: iconHtml('💀', 'zr-marker-zombie'),
           className: '',
           iconSize: [32, 32],
           iconAnchor: [16, 16],
