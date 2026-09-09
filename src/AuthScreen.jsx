@@ -1,27 +1,35 @@
 import { useState } from 'react'
 import { supabase } from './lib/supabaseClient.js'
-import { isUsernameTaken, lookupEmailByUsername, normalizeUsername, siteUrl } from './lib/authHelpers.js'
+import {
+  isUsernameTaken,
+  lookupEmailByUsername,
+  lookupUsernameByEmail,
+  normalizeUsername,
+  siteUrl,
+} from './lib/authHelpers.js'
 
 const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/
 
-// 로그인/회원가입/비번찾기 화면. 아이디(username)로 로그인하지만 내부적으로는
+// 로그인/회원가입/아이디찾기/비번찾기 화면. 아이디(username)로 로그인하지만 내부적으로는
 // Supabase Auth(이메일 기반)를 그대로 씀 — 가입할 때 이메일도 같이 받아서 profiles
-// 테이블에 아이디↔이메일을 저장해두고, 로그인/비번찾기 시 그걸로 이메일을 찾음.
+// 테이블에 아이디↔이메일을 저장해두고, 로그인/아이디찾기/비번찾기 시 그걸로 서로를 찾음.
 // 계정으로 로그인하면 나만의 좀비 경로를 만들고 수정/삭제할 수 있음(누구나 가입 가능).
 // 만든 경로는 다른 사람들도 로그인 없이 게임에서 바로 쓸 수 있고, 수정/삭제는 본인만 가능.
 export default function AuthScreen({ onBack }) {
-  const [tab, setTab] = useState('login') // 'login' | 'signup' | 'forgot'
+  const [tab, setTab] = useState('login') // 'login' | 'signup' | 'findId' | 'forgot'
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const [foundUsername, setFoundUsername] = useState('')
 
   const switchTab = (next) => {
     setTab(next)
     setError('')
     setMessage('')
+    setFoundUsername('')
   }
 
   const login = async () => {
@@ -93,6 +101,28 @@ export default function AuthScreen({ onBack }) {
     }
   }
 
+  const findId = async () => {
+    if (!email.trim()) {
+      setError('가입할 때 쓴 이메일을 입력해주세요.')
+      return
+    }
+    setBusy(true)
+    setError('')
+    setFoundUsername('')
+    try {
+      const found = await lookupUsernameByEmail(email)
+      if (!found) {
+        setError('그 이메일로 가입한 계정을 찾을 수 없어요.')
+        return
+      }
+      setFoundUsername(found)
+    } catch (e) {
+      setError(e?.message || '요청 중 문제가 생겼어요.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const sendResetEmail = async () => {
     if (!username.trim()) {
       setError('아이디를 입력해주세요.')
@@ -124,8 +154,19 @@ export default function AuthScreen({ onBack }) {
   const submit = () => {
     if (tab === 'login') login()
     else if (tab === 'signup') signup()
+    else if (tab === 'findId') findId()
     else sendResetEmail()
   }
+
+  const submitLabel = busy
+    ? '처리 중…'
+    : tab === 'login'
+      ? '로그인'
+      : tab === 'signup'
+        ? '계정 만들기'
+        : tab === 'findId'
+          ? '아이디 찾기'
+          : '재설정 메일 보내기'
 
   return (
     <div className="zr-screen zr-start">
@@ -142,33 +183,39 @@ export default function AuthScreen({ onBack }) {
           <button className={tab === 'signup' ? 'zr-pace-btn zr-pace-btn-on' : 'zr-pace-btn'} onClick={() => switchTab('signup')}>
             계정 만들기
           </button>
+          <button className={tab === 'findId' ? 'zr-pace-btn zr-pace-btn-on' : 'zr-pace-btn'} onClick={() => switchTab('findId')}>
+            아이디 찾기
+          </button>
           <button className={tab === 'forgot' ? 'zr-pace-btn zr-pace-btn-on' : 'zr-pace-btn'} onClick={() => switchTab('forgot')}>
             비번 찾기
           </button>
         </div>
 
-        <input
-          className="zr-admin-input"
-          type="text"
-          placeholder="아이디 (영문/숫자/밑줄 3~20자)"
-          autoComplete="username"
-          autoCapitalize="none"
-          autoCorrect="off"
-          spellCheck={false}
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-        />
-        {tab === 'signup' && (
+        {tab !== 'findId' && (
+          <input
+            className="zr-admin-input"
+            type="text"
+            placeholder="아이디 (영문/숫자/밑줄 3~20자)"
+            autoComplete="username"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+          />
+        )}
+        {(tab === 'signup' || tab === 'findId') && (
           <input
             className="zr-admin-input"
             type="email"
-            placeholder="이메일 (비밀번호를 잊었을 때 찾는 용도)"
+            placeholder={tab === 'findId' ? '가입할 때 쓴 이메일' : '이메일 (비밀번호를 잊었을 때 찾는 용도)'}
             autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && submit()}
           />
         )}
-        {tab !== 'forgot' && (
+        {tab !== 'forgot' && tab !== 'findId' && (
           <input
             className="zr-admin-input"
             type="password"
@@ -186,11 +233,32 @@ export default function AuthScreen({ onBack }) {
         )}
 
         {error && <p className="zr-error">{error}</p>}
-        {message && <p className="zr-pace-hint" style={{ color: '#9fd8a8' }}>{message}</p>}
+        {message && (
+          <p className="zr-pace-hint" style={{ color: '#9fd8a8' }}>
+            {message}
+          </p>
+        )}
+        {foundUsername && (
+          <p className="zr-pace-hint" style={{ color: '#9fd8a8' }}>
+            회원님의 아이디는 <strong>{foundUsername}</strong> 입니다.
+          </p>
+        )}
 
-        <button className="zr-btn zr-btn-primary" onClick={submit} disabled={busy}>
-          {busy ? '처리 중…' : tab === 'login' ? '로그인' : tab === 'signup' ? '계정 만들기' : '재설정 메일 보내기'}
-        </button>
+        {foundUsername ? (
+          <button
+            className="zr-btn zr-btn-primary"
+            onClick={() => {
+              setUsername(foundUsername)
+              switchTab('login')
+            }}
+          >
+            이 아이디로 로그인하러 가기
+          </button>
+        ) : (
+          <button className="zr-btn zr-btn-primary" onClick={submit} disabled={busy}>
+            {submitLabel}
+          </button>
+        )}
         <button className="zr-btn zr-btn-ghost" onClick={onBack}>
           돌아가기
         </button>

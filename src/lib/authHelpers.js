@@ -19,6 +19,17 @@ export async function lookupEmailByUsername(username) {
   return data?.email ?? null
 }
 
+// 이메일로 아이디를 잊어버렸을 때 찾아줌 (반대 방향 조회)
+export async function lookupUsernameByEmail(email) {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('username')
+    .eq('email', email.trim().toLowerCase())
+    .maybeSingle()
+  if (error) throw error
+  return data?.username ?? null
+}
+
 export async function isUsernameTaken(username) {
   const { data, error } = await supabase
     .from('profiles')
