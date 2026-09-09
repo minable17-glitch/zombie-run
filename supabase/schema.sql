@@ -33,6 +33,17 @@ update public.profiles set username = lower(username) where username <> lower(us
 drop policy if exists "Anyone can look up username" on public.profiles;
 create policy "Anyone can look up username" on public.profiles for select using (true);
 
+-- 가입 직후 앱 코드가 직접 profiles에 자기 줄을 기록함(아래 트리거가 일부 프로젝트에서
+-- 조용히 안 걸리는 경우가 있어서, 트리거만 믿지 않고 이중으로 안전하게 함). 본인 것만
+-- 만들고 고칠 수 있게 제한함
+drop policy if exists "Users can create own profile" on public.profiles;
+create policy "Users can create own profile" on public.profiles
+  for insert with check (auth.uid() = id);
+
+drop policy if exists "Users can update own profile" on public.profiles;
+create policy "Users can update own profile" on public.profiles
+  for update using (auth.uid() = id) with check (auth.uid() = id);
+
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql

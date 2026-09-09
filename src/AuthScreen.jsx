@@ -77,16 +77,30 @@ export default function AuthScreen({ onBack }) {
         setError('이미 사용 중인 아이디예요.')
         return
       }
+      const normalizedUsername = normalizeUsername(username)
       const { data, error: signupError } = await supabase.auth.signUp({
         email: email.trim(),
         password,
         // 아이디는 항상 소문자로 저장 — 폰 키보드의 자동 대문자화 때문에 가입 때와
         // 로그인 때 입력값이 실제로 달라져서 "존재하지 않는 아이디"로 보이는 걸 방지
-        options: { data: { username: normalizeUsername(username) } },
+        options: { data: { username: normalizedUsername } },
       })
       if (signupError) {
         setError(signupError.message)
         return
+      }
+      // DB 트리거(on_auth_user_created)가 일부 프로젝트 환경에서 조용히 안 걸리는 경우가 있어서,
+      // 트리거에만 의존하지 않고 세션이 생기면 여기서도 직접 profiles에 기록해줌 (트리거가 이미
+      // 만들어놨어도 upsert라 안전함)
+      if (data.session) {
+        const { error: profileError } = await supabase.from('profiles').upsert(
+          { id: data.session.user.id, username: normalizedUsername, email: email.trim().toLowerCase() },
+          { onConflict: 'id' }
+        )
+        if (profileError) {
+          setError(profileError.message)
+          return
+        }
       }
       // 이메일 인증이 꺼져있는 프로젝트면 가입과 동시에 세션이 생겨서 바로 화면이 넘어감.
       // 켜져있으면 세션이 없어서 안내 메시지만 보여줌
