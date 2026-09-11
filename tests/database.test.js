@@ -3,7 +3,7 @@ import { beforeAll, afterAll, test, expect } from 'vitest'
 import { PGlite } from '@electric-sql/pglite'
 import { readFileSync } from 'node:fs'
 
-const migration = ['20260909140000_zombie_run_security.sql', '20260910010000_room_expiration.sql']
+const migration = ['20260909140000_zombie_run_security.sql', '20260910010000_room_expiration.sql', '20260911030000_legacy_profile_lookup.sql']
   .map(name => readFileSync('supabase/migrations/' + name, 'utf8').replace(/^\uFEFF/, '').trim()).join('\n\n')
 const ids = {
   host: '00000000-0000-4000-8000-000000000001',
@@ -46,6 +46,17 @@ test('the actual SQL executes twice and guest accounts do not create profiles', 
   await db.exec(migration)
   expect((await db.query('select count(*)::int n from profiles')).rows[0].n).toBe(0)
   expect(readFileSync('supabase/schema.sql', 'utf8').replace(/^\uFEFF/, '').trim()).toBe(migration)
+})
+
+test('legacy profiles remain usable without username metadata and keep their stored username', async () => {
+  const id = '00000000-0000-4000-8000-000000000099'
+  await db.query("insert into auth.users(id,email) values($1,'legacy@example.test')", [id])
+  await db.query("insert into profiles(id,username,email) values($1,'legacy_runner','old@example.test')", [id])
+  await asUser(id, 'select zr_ensure_profile()')
+  expect((await asUser(id, 'select username,email from profiles')).rows).toEqual([
+    { username: 'legacy_runner', email: 'legacy@example.test' },
+  ])
+  await expect(asUser(ids.host, 'select zr_ensure_profile()')).rejects.toThrow()
 })
 
 test('signup creates a normalized profile atomically and rejects duplicate names', async () => {
