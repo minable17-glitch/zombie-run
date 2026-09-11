@@ -11,6 +11,7 @@ import { fetchZombieMaps } from './lib/zombieMaps.js'
 import { useBackableStep } from './lib/useBackableStep.js'
 import RoomLobby from './RoomLobby.jsx'
 import { ensureOwnProfile } from './lib/authHelpers.js'
+import { accountLanding } from './lib/authLanding.js'
 import { readRoom, updateRoomStat } from './lib/roomApi.js'
 import { readFix, GPS_STALE_MS } from './lib/gameSafety.js'
 import {
@@ -61,6 +62,8 @@ export default function App() {
   const [profileReady, setProfileReady] = useState(false)
   const [profileError, setProfileError] = useState('')
   const [profileRetry, setProfileRetry] = useState(0)
+  const [showAccount, setShowAccount] = useState(accountLanding)
+  const [accountUsername, setAccountUsername] = useState('')
 
   useEffect(() => {
     if (!supabase) {
@@ -84,7 +87,11 @@ export default function App() {
     setProfileReady(false)
     setProfileError('')
     if (adminSession) {
-      ensureOwnProfile().then(() => { if (active) setProfileReady(true) })
+      ensureOwnProfile().then(async () => {
+        const { data, error } = await supabase.from('profiles').select('username').eq('id', adminSession.user.id).single()
+        if (error) throw error
+        if (active) { setAccountUsername(data.username); setProfileReady(true) }
+      })
         .catch(error => { if (active) setProfileError(error.message) })
     }
     return () => { active = false }
@@ -92,7 +99,7 @@ export default function App() {
 
   useEffect(() => {
     const url = new URL(window.location.href)
-    if (url.searchParams.has('account')) {
+    if (accountLanding) {
       setMode('admin')
       url.searchParams.delete('account')
       window.history.replaceState(window.history.state, '', url)
@@ -310,6 +317,19 @@ export default function App() {
 
   if (passwordRecovery) {
     return <ResetPassword onDone={() => setPasswordRecovery(false)} />
+  }
+
+  if (showAccount) {
+    return <div className="zr-screen zr-start"><div className="zr-start-card">
+      <h1 className="zr-title">아이디 찾기</h1>
+      {!adminSessionChecked ? <p role="status">이메일 인증을 확인하고 있어요…</p> :
+        !adminSession ? <p role="alert">링크가 만료됐거나 인증되지 않았어요. 아이디 찾기 메일을 다시 요청해주세요.</p> :
+        profileError ? <><p role="alert">{profileError}</p><button className="zr-btn zr-btn-primary" onClick={() => setProfileRetry(n => n + 1)}>다시 시도</button></> :
+        !profileReady ? <p role="status">아이디를 확인하고 있어요…</p> :
+        <><p>가입하신 아이디입니다.</p><p className="zr-title"><strong>{accountUsername}</strong></p><p>이메일 인증으로 로그인되었습니다.</p></>}
+      <button className="zr-btn zr-btn-primary" onClick={() => { setShowAccount(false); setMode('admin') }}>계정 화면으로</button>
+      <button className="zr-btn zr-btn-ghost" onClick={() => { setShowAccount(false); setMode('game') }}>게임으로 돌아가기</button>
+    </div></div>
   }
 
   if (mode === 'admin') {
