@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { supabase } from './lib/supabaseClient.js'
 
 // 비밀번호 재설정 메일의 링크를 눌러서 돌아왔을 때(Supabase가 PASSWORD_RECOVERY
@@ -7,26 +7,29 @@ export default function ResetPassword({ onDone }) {
   const [password, setPassword] = useState('')
   const [password2, setPassword2] = useState('')
   const [busy, setBusy] = useState(false)
+  const busyRef = useRef(false)
   const [error, setError] = useState('')
 
   const submit = async () => {
-    if (password.length < 6) {
-      setError('비밀번호는 6자 이상으로 해주세요.')
+    if (busyRef.current) return
+    if (password.length < 8) {
+      setError('비밀번호는 8자 이상으로 해주세요.')
       return
     }
     if (password !== password2) {
       setError('비밀번호가 서로 달라요.')
       return
     }
+    busyRef.current = true
     setBusy(true)
     setError('')
-    const { error: updateError } = await supabase.auth.updateUser({ password })
-    setBusy(false)
-    if (updateError) {
-      setError(updateError.message)
-      return
-    }
-    onDone()
+    try {
+      const { error } = await supabase.auth.updateUser({ password })
+      if (error) throw error
+      onDone()
+    } catch {
+      setError('비밀번호를 변경하지 못했어요. 복구 링크와 연결 상태를 확인해주세요.')
+    } finally { busyRef.current = false; setBusy(false) }
   }
 
   return (
@@ -37,7 +40,7 @@ export default function ResetPassword({ onDone }) {
         <input
           className="zr-admin-input"
           type="password"
-          placeholder="새 비밀번호 (6자 이상)"
+          placeholder="새 비밀번호 (8자 이상)" aria-label="새 비밀번호" disabled={busy}
           autoComplete="new-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
@@ -45,7 +48,7 @@ export default function ResetPassword({ onDone }) {
         <input
           className="zr-admin-input"
           type="password"
-          placeholder="새 비밀번호 확인"
+          placeholder="새 비밀번호 확인" aria-label="새 비밀번호 확인" disabled={busy}
           autoComplete="new-password"
           value={password2}
           onChange={(e) => setPassword2(e.target.value)}

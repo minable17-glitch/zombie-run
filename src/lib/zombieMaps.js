@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient.js'
+import { validZombieMap } from './gameSafety.js'
 
 export function rowToZombieMap(row) {
   return {
@@ -17,7 +18,7 @@ export async function fetchZombieMaps() {
   try {
     const { data, error } = await supabase.from('zombie_maps').select('*').order('created_at', { ascending: false })
     if (error || !data) return []
-    return data.map(rowToZombieMap)
+    return data.filter(validZombieMap).map(rowToZombieMap)
   } catch {
     return []
   }

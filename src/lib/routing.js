@@ -20,6 +20,7 @@ export async function fetchWalkingPath(apiKey, from, to) {
   if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait))
   try {
     const res = await fetch(`${ORS_DIRECTIONS_URL}/geojson`, {
+      signal: AbortSignal.timeout(8000),
       method: 'POST',
       headers: { Authorization: apiKey, 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -32,7 +33,10 @@ export async function fetchWalkingPath(apiKey, from, to) {
     if (!res.ok) return null
     const data = await res.json()
     const coords = data?.features?.[0]?.geometry?.coordinates
-    if (!Array.isArray(coords) || coords.length < 2) return null
+    if (!Array.isArray(coords) || coords.length < 2 || coords.length > 10000) return null
+    if (!coords.every(point => Array.isArray(point) && point.length >= 2 &&
+      Number.isFinite(point[0]) && Math.abs(point[0]) <= 180 &&
+      Number.isFinite(point[1]) && Math.abs(point[1]) <= 90)) return null
     return coords.map(([lon, lat]) => ({ lat, lon }))
   } catch {
     return null

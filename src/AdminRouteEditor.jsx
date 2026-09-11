@@ -13,7 +13,7 @@ const DEFAULT_RADIUS_M = 400
 // 쓸 수만 있고 여기서 편집은 못 함).
 export default function AdminRouteEditor({ onBack, onSaved, onLogout, session }) {
   const userId = session?.user?.id ?? null
-  const [step, setStep] = useBackableStep('area') // 'area' | 'routes'
+  const [step, setStep] = useBackableStep('area', 'zr-editor') // 'area' | 'routes'
   const [center, setCenter] = useState(null)
   const [geoError, setGeoError] = useState('')
   const [mapName, setMapName] = useState('')
@@ -133,6 +133,7 @@ export default function AdminRouteEditor({ onBack, onSaved, onLogout, session })
     }
     if (editingMapId === id) startNewMap()
     refreshSavedMaps()
+    onSaved?.()
   }
 
   const confirmArea = () => setStep('routes')
@@ -161,9 +162,10 @@ export default function AdminRouteEditor({ onBack, onSaved, onLogout, session })
     let error = null
     try {
       const result = editingMapId
-        ? await supabase.from('zombie_maps').update(payload).eq('id', editingMapId)
-        : await supabase.from('zombie_maps').insert(payload)
+        ? await supabase.from('zombie_maps').update(payload).eq('id', editingMapId).select('id').single()
+        : await supabase.from('zombie_maps').insert(payload).select('id').single()
       error = result.error
+      if (!error && !editingMapId) setEditingMapId(result.data.id)
     } catch (e) {
       error = e
     }
@@ -182,7 +184,7 @@ export default function AdminRouteEditor({ onBack, onSaved, onLogout, session })
     <div className="zr-screen">
       <div className="zr-hud-top zr-admin-top">
         <div>
-          <div className="zr-hud-label">내 좀비 경로 만들기</div>
+          <div className="zr-hud-label">내 좀비 경로 만들기{session?.user?.user_metadata?.username ? ' · ' + session.user.user_metadata.username : ''}</div>
           <div className="zr-hud-value" style={{ fontSize: 13 }}>
             {step === 'area' ? '구역(중심·반경)을 먼저 정해주세요' : '지도를 탭해서 경로를 그려주세요'}
           </div>
@@ -227,7 +229,7 @@ export default function AdminRouteEditor({ onBack, onSaved, onLogout, session })
               <>
                 <input
                   className="zr-admin-input"
-                  placeholder="지도 이름 (예: 우리 동네 공원)"
+                  placeholder="지도 이름 (예: 우리 동네 공원)" aria-label="지도 이름" maxLength={100}
                   value={mapName}
                   onChange={(e) => setMapName(e.target.value)}
                 />

@@ -1,22 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from './lib/supabaseClient.js'
 import { AREA_RADIUS_PRESETS, DEFAULT_PACE_IDX, DEFAULT_RADIUS_IDX, PACE_PRESETS } from './lib/gameConfig.js'
-import { useBackableStep } from './lib/useBackableStep.js'
+import * as rooms from './lib/roomApi.js'
 
-const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // 헷갈리는 0/O, 1/I 제외
 const POLL_MS = 3000
-
-function randomCode(len = 5) {
-  let s = ''
-  for (let i = 0; i < len; i++) s += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]
-  return s
-}
 
 // 관리자(방장)가 방을 만들고 코드를 공유하면, 참가자들이 그 코드로 들어와 대기하다가
 // 방장이 시작을 누르면 전원이 동시에 같은 설정(페이스/모드/지도)으로 게임을 시작하는 화면.
 // "따로 모드": 각자 자기 좀비를 만나지만, 서로의 생존 상태는 주기적으로 공유됨(App.jsx가 담당)
-export default function RoomLobby({ zombieMaps = [], onBack, onStart }) {
-  const [step, setStep] = useBackableStep('choose') // 'choose' | 'create' | 'join' | 'waiting'
+export default function RoomLobby({ zombieMaps = [], onBack, onStart, startError }) {
+  const [step, setStep] = useState('choose') // 'choose' | 'create' | 'join' | 'waiting'
   const [nickname, setNickname] = useState('')
   const [joinCode, setJoinCode] = useState('')
   const [paceIdx, setPaceIdx] = useState(DEFAULT_PACE_IDX)
@@ -31,9 +24,23 @@ export default function RoomLobby({ zombieMaps = [], onBack, onStart }) {
   const [isHost, setIsHost] = useState(false)
   const [players, setPlayers] = useState([])
   const pollRef = useRef(null)
+  const roomRef = useRef(null)
+  const transferred = useRef(false)
+  const alive = useRef(true)
+  const polling = useRef(false)
+  const startAttempted = useRef(false)
+  const actionBusy = useRef(false)
+  const onStartRef = useRef(onStart)
+  onStartRef.current = onStart
+  const [needsRetry, setNeedsRetry] = useState(false)
 
   useEffect(() => {
-    return () => clearInterval(pollRef.current)
+    alive.current = true
+    return () => {
+      alive.current = false
+      clearTimeout(pollRef.current)
+      if (roomRef.current && !transferred.current) rooms.leaveRoom(roomRef.current).catch(() => {})
+    }
   }, [])
 
   if (!supabase) {
@@ -50,116 +57,101 @@ export default function RoomLobby({ zombieMaps = [], onBack, onStart }) {
     )
   }
 
-  const pollRoom = async (roomId) => {
-    const [{ data: roomRow }, { data: playerRows }] = await Promise.all([
-      supabase.from('game_rooms').select('*').eq('id', roomId).single(),
-      supabase.from('room_players').select('*').eq('room_id', roomId).order('joined_at', { ascending: true }),
-    ])
-    if (playerRows) setPlayers(playerRows)
-    if (roomRow) {
-      setRoom(roomRow)
-      if (roomRow.status === 'started') {
-        clearInterval(pollRef.current)
-        onStart(roomRow.config, {
-          roomId: roomRow.id,
-          roomCode: roomRow.code,
-          playerId,
-          nickname: nickname.trim() || '참가자',
-        })
+  const enterGame = async (roomRow, id, name) => {
+    if (startAttempted.current || !alive.current) return
+    startAttempted.current = true
+    setBusy(true)
+    // The parent can unmount us on success; don't interpret that as leaving.
+    transferred.current = true
+    try {
+      const started = await onStartRef.current(roomRow.config, {
+        roomId: roomRow.id, roomCode: roomRow.code, playerId: id, nickname: name,
+      })
+      if (!started) {
+        transferred.current = false
+        if (!alive.current) rooms.leaveRoom(roomRow.id).catch(() => {})
+        else setNeedsRetry(true)
       }
-    }
+    } catch {
+      transferred.current = false
+      if (alive.current) { setError('게임을 시작하지 못했어요. 다시 시도해주세요.'); setNeedsRetry(true) }
+    } finally { if (alive.current) setBusy(false) }
   }
 
-  const startPolling = (roomId) => {
-    clearInterval(pollRef.current)
-    pollRoom(roomId)
-    pollRef.current = setInterval(() => pollRoom(roomId), POLL_MS)
+  const pollRoom = async (roomId, id, name) => {
+    if (!alive.current || polling.current) return
+    polling.current = true
+    try {
+      const result = await rooms.readRoom(roomId)
+      if (!alive.current || roomRef.current !== roomId) return
+      setPlayers(result.players)
+      setRoom(result.room)
+      setError('')
+      if (result.room.status === 'closed') {
+        setError('방장이 방을 닫았어요. 나갔다가 새 방에 참가해주세요.')
+        return
+      }
+      if (result.room.status === 'started') {
+        await enterGame(result.room, id, name)
+        return
+      }
+    } catch (e) { if (alive.current) setError(e.message) }
+    finally { polling.current = false }
+    if (alive.current && roomRef.current === roomId)
+      pollRef.current = setTimeout(() => pollRoom(roomId, id, name), POLL_MS)
   }
 
-  const createRoom = async () => {
-    if (!nickname.trim()) {
-      setError('닉네임을 입력해주세요.')
+  const connectRoom = async (create) => {
+    if (actionBusy.current) return
+    const name = nickname.trim()
+    if (!name || (!create && !joinCode.trim())) {
+      setError('닉네임과 방 코드를 확인해주세요.')
       return
     }
+    actionBusy.current = true
     setBusy(true)
     setError('')
     try {
-      const code = randomCode()
+      await rooms.ensureRoomIdentity()
+      if (!alive.current) return
       const config = mapId ? { paceIdx, mapId } : { paceIdx, playMode, radiusIdx }
-      const { data: roomRow, error: roomErr } = await supabase
-        .from('game_rooms')
-        .insert({ code, host_name: nickname.trim(), status: 'waiting', config })
-        .select()
-        .single()
-      if (roomErr) throw roomErr
-      const { data: playerRow, error: playerErr } = await supabase
-        .from('room_players')
-        .insert({ room_id: roomRow.id, nickname: nickname.trim() })
-        .select()
-        .single()
-      if (playerErr) throw playerErr
-      setRoom(roomRow)
-      setPlayerId(playerRow.id)
-      setIsHost(true)
+      const result = create
+        ? await rooms.createRoom(name, config)
+        : await rooms.joinRoom(joinCode.trim().toUpperCase(), name)
+      if (!alive.current) { await rooms.leaveRoom(result.room.id); return }
+      roomRef.current = result.room.id
+      setRoom(result.room)
+      setPlayerId(result.player.id)
+      setIsHost(create)
       setStep('waiting')
-      startPolling(roomRow.id)
-    } catch (e) {
-      setError(e.message || '방을 만들지 못했어요.')
-    } finally {
-      setBusy(false)
-    }
+      startAttempted.current = false
+      pollRoom(result.room.id, result.player.id, name)
+    } catch (e) { if (alive.current) setError(e.message) }
+    finally { actionBusy.current = false; if (alive.current) setBusy(false) }
   }
-
-  const joinRoom = async () => {
-    if (!nickname.trim() || !joinCode.trim()) {
-      setError('코드와 닉네임을 모두 입력해주세요.')
-      return
-    }
-    setBusy(true)
-    setError('')
-    try {
-      const { data: roomRow, error: roomErr } = await supabase
-        .from('game_rooms')
-        .select('*')
-        .eq('code', joinCode.trim().toUpperCase())
-        .maybeSingle()
-      if (roomErr) throw roomErr
-      if (!roomRow) throw new Error('그 코드로 된 방을 찾을 수 없어요.')
-      if (roomRow.status !== 'waiting') throw new Error('이미 시작된 방이에요.')
-      const { data: playerRow, error: playerErr } = await supabase
-        .from('room_players')
-        .insert({ room_id: roomRow.id, nickname: nickname.trim() })
-        .select()
-        .single()
-      if (playerErr) throw playerErr
-      setRoom(roomRow)
-      setPlayerId(playerRow.id)
-      setIsHost(false)
-      setStep('waiting')
-      startPolling(roomRow.id)
-    } catch (e) {
-      setError(e.message || '참가하지 못했어요.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
+  const createRoom = () => connectRoom(true)
+  const joinRoom = () => connectRoom(false)
   const startGame = async () => {
-    if (!room) return
+    if (!room || actionBusy.current) return
+    actionBusy.current = true
     setBusy(true)
     setError('')
     try {
-      const { error: err } = await supabase
-        .from('game_rooms')
-        .update({ status: 'started', started_at: new Date().toISOString() })
-        .eq('id', room.id)
-      if (err) throw err
-      clearInterval(pollRef.current)
-      onStart(room.config, { roomId: room.id, roomCode: room.code, playerId, nickname: nickname.trim() || '참가자' })
-    } catch (e) {
-      setError(e.message || '시작하지 못했어요.')
-      setBusy(false)
-    }
+      const started = await rooms.startRoom(room.id)
+      clearTimeout(pollRef.current)
+      await enterGame(started, playerId, nickname.trim())
+    } catch (e) { setError(e.message) }
+    finally { actionBusy.current = false; if (alive.current) setBusy(false) }
+  }
+  const exitRoom = async () => {
+    if (busy) return
+    setBusy(true)
+    clearTimeout(pollRef.current)
+    try {
+      if (roomRef.current) await rooms.leaveRoom(roomRef.current)
+      roomRef.current = null
+      onBack()
+    } catch (e) { setError(e.message); setBusy(false) }
   }
 
   if (step === 'choose') {
@@ -192,7 +184,7 @@ export default function RoomLobby({ zombieMaps = [], onBack, onStart }) {
           <h1 className="zr-title">방 만들기</h1>
           <input
             className="zr-admin-input"
-            placeholder="내 닉네임 (방장)"
+            placeholder="내 닉네임 (방장)" aria-label="방장 닉네임" maxLength={20}
             value={nickname}
             onChange={(e) => setNickname(e.target.value)}
           />
@@ -283,7 +275,7 @@ export default function RoomLobby({ zombieMaps = [], onBack, onStart }) {
           <button className="zr-btn zr-btn-primary" onClick={createRoom} disabled={busy}>
             {busy ? '만드는 중…' : '방 만들기'}
           </button>
-          <button className="zr-btn zr-btn-ghost" onClick={() => setStep('choose')}>
+          <button className="zr-btn zr-btn-ghost" disabled={busy} onClick={() => setStep('choose')}>
             뒤로
           </button>
         </div>
@@ -298,14 +290,14 @@ export default function RoomLobby({ zombieMaps = [], onBack, onStart }) {
           <h1 className="zr-title">코드로 참가하기</h1>
           <input
             className="zr-admin-input"
-            placeholder="방 코드"
+            placeholder="방 코드" aria-label="방 코드" maxLength={6}
             value={joinCode}
             onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
             style={{ textAlign: 'center', fontSize: 22, letterSpacing: 4, textTransform: 'uppercase' }}
           />
           <input
             className="zr-admin-input"
-            placeholder="내 닉네임"
+            placeholder="내 닉네임" aria-label="내 닉네임" maxLength={20}
             value={nickname}
             onChange={(e) => setNickname(e.target.value)}
           />
@@ -313,7 +305,7 @@ export default function RoomLobby({ zombieMaps = [], onBack, onStart }) {
           <button className="zr-btn zr-btn-primary" onClick={joinRoom} disabled={busy}>
             {busy ? '참가하는 중…' : '참가하기'}
           </button>
-          <button className="zr-btn zr-btn-ghost" onClick={() => setStep('choose')}>
+          <button className="zr-btn zr-btn-ghost" disabled={busy} onClick={() => setStep('choose')}>
             뒤로
           </button>
         </div>
@@ -346,8 +338,15 @@ export default function RoomLobby({ zombieMaps = [], onBack, onStart }) {
             </span>
           ))}
         </div>
-        {error && <p className="zr-error">{error}</p>}
-        {isHost ? (
+        {error && <p role="alert" className="zr-error">{error}</p>}
+        {startError && <p role="alert" className="zr-error">{startError}</p>}
+        {needsRetry ? (
+          <button className="zr-btn zr-btn-primary" disabled={busy} onClick={() => {
+            startAttempted.current = false
+            setNeedsRetry(false)
+            enterGame(room, playerId, nickname.trim())
+          }}>위치 확인 후 다시 시작</button>
+        ) : isHost ? (
           <button className="zr-btn zr-btn-primary" onClick={startGame} disabled={busy}>
             {busy ? '시작하는 중…' : `다같이 시작하기 (${players.length}명)`}
           </button>
@@ -356,7 +355,7 @@ export default function RoomLobby({ zombieMaps = [], onBack, onStart }) {
             방장이 시작하면 자동으로 게임이 시작돼요…
           </p>
         )}
-        <button className="zr-btn zr-btn-ghost" onClick={onBack}>
+        <button className="zr-btn zr-btn-ghost" onClick={exitRoom} disabled={busy}>
           나가기
         </button>
       </div>

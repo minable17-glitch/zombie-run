@@ -1,48 +1,38 @@
 import { supabase } from './supabaseClient.js'
 
-// 아이디 비교는 항상 소문자로 통일함 — 안 그러면 폰 키보드가 첫 글자를 자동으로
-// 대문자로 바꿔주는 것 때문에(자동 대문자화) 가입할 때 친 아이디와 로그인할 때
-// 친 아이디가 실제로는 다른 문자열이 되어 "존재하지 않는 아이디"로 보이는 문제가 생김
 export function normalizeUsername(username) {
   return username.trim().toLowerCase()
 }
 
-// 아이디(username)으로 로그인하려면 Supabase Auth가 원래 필요로 하는 이메일을
-// 먼저 찾아야 해서, profiles 테이블에서 매핑을 조회함
-export async function lookupEmailByUsername(username) {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('email')
-    .eq('username', normalizeUsername(username))
-    .maybeSingle()
-  if (error) throw error
-  return data?.email ?? null
-}
-
-// 이메일로 아이디를 잊어버렸을 때 찾아줌 (반대 방향 조회)
-export async function lookupUsernameByEmail(email) {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('username')
-    .eq('email', email.trim().toLowerCase())
-    .maybeSingle()
-  if (error) throw error
-  return data?.username ?? null
-}
-
-export async function isUsernameTaken(username) {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('username')
-    .eq('username', normalizeUsername(username))
-    .maybeSingle()
-  if (error) throw error
-  return !!data
-}
-
-// 배포 환경(GitHub Pages 하위 경로)과 로컬 개발 둘 다에서 올바른 절대 URL을 만들어줌.
-// 비밀번호 재설정 메일의 링크가 이 주소로 돌아오게 됨 (Supabase 대시보드
-// Authentication → URL Configuration에 이 주소가 허용 목록에 등록돼 있어야 함)
 export function siteUrl() {
   return window.location.origin + import.meta.env.BASE_URL
+}
+
+// Email mappings stay on the server. No anonymous profiles SELECT.
+export async function authRequest(action, fields) {
+  if (!supabase) throw new Error('계정 연결 설정이 필요해요.')
+  const { data, error } = await supabase.functions.invoke('zombie-auth', {
+    body: { action, ...fields, redirectTo: siteUrl() },
+  })
+  if (error) {
+    let message = '계정 서비스에 연결하지 못했어요. 잠시 후 다시 시도해주세요.'
+    try {
+      const body = await error.context?.json()
+      if (typeof body?.error === 'string') message = body.error
+    } catch { /* retain useful fallback */ }
+    throw new Error(message)
+  }
+  if (data?.error) throw new Error(data.error)
+  return data
+}
+
+export async function loginWithUsername(username, password) {
+  const result = await authRequest('login', { username: normalizeUsername(username), password })
+  const { error } = await supabase.auth.setSession(result.session)
+  if (error) throw error
+}
+
+export async function ensureOwnProfile() {
+  const { error } = await supabase.rpc('zr_ensure_profile')
+  if (error) throw new Error('계정 정보를 준비하지 못했어요. 다시 시도해주세요.')
 }
