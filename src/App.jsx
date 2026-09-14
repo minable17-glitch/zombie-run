@@ -59,6 +59,7 @@ export default function App() {
   const [adminSession, setAdminSession] = useState(null)
   const [adminSessionChecked, setAdminSessionChecked] = useState(false)
   const [passwordRecovery, setPasswordRecovery] = useState(false)
+  const [recoveryExpired, setRecoveryExpired] = useState(passwordRecoveryExpired)
   const [profileReady, setProfileReady] = useState(false)
   const [profileError, setProfileError] = useState('')
   const [profileRetry, setProfileRetry] = useState(0)
@@ -320,6 +321,12 @@ export default function App() {
     return <ResetPassword onDone={() => setPasswordRecovery(false)} />
   }
 
+  if (recoveryExpired) {
+    return <AuthScreen onBack={() => { setRecoveryExpired(false); setMode('game') }}
+      initialTab="forgot"
+      initialMessage="이 재설정 링크는 만료됐거나 이미 사용됐어요. 아이디를 입력해 새 메일을 받은 뒤, 가장 최근 메일을 열어주세요." />
+  }
+
   if (showAccount) {
     return <div className="zr-screen zr-start"><div className="zr-start-card">
       <h1 className="zr-title">아이디 찾기</h1>
@@ -344,11 +351,7 @@ export default function App() {
       )
     }
     if (supabase && !adminSession) {
-      return <AuthScreen onBack={() => setMode('game')}
-        initialTab={passwordRecoveryExpired ? 'forgot' : 'login'}
-        initialMessage={passwordRecoveryExpired
-          ? '이 재설정 링크는 만료됐거나 이미 사용됐어요. 아이디를 입력해 새 메일을 받은 뒤, 가장 최근 메일을 열어주세요.'
-          : ''} />
+      return <AuthScreen onBack={() => setMode('game')} />
     }
     if (adminSession && !profileReady) {
       return <div className="zr-screen zr-start"><div className="zr-start-card">
