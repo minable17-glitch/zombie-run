@@ -7,8 +7,14 @@ import 'leaflet/dist/leaflet.css'
 const TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
 const TILE_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
 
-function iconHtml(emoji, className) {
-  return `<div class="zr-marker ${className}">${emoji}</div>`
+function iconHtml(kind, className = '') {
+  if (kind === 'player') return `<div class="zr-marker zr-marker-player ${className}">
+    <span class="zr-marker-aura"></span><svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="9" r="6"/><path d="M18 18h12l4 12-5 1 4 13h-6l-3-11-3 11h-6l4-13-5-1 4-12Z"/><path d="m18 22-8 8m20-8 8 8"/></svg>
+  </div>`
+  if (kind === 'zombie') return `<div class="zr-marker zr-marker-zombie ${className}">
+    <span class="zr-marker-threat-ring"></span><span class="zr-zombie-label">추격</span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M10 39V19c0-8 6-13 14-13s14 5 14 13v20l-5-3-4 4-5-4-5 4-4-4-5 3Z"/><circle cx="18" cy="23" r="3"/><circle cx="30" cy="23" r="3"/><path d="M17 32c4 3 10 3 14 0"/></svg>
+  </div>`
+  return `<div class="zr-marker zr-marker-pickup ${className}"><span class="zr-pickup-glow"></span><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M15 7h18M15 41h18M18 8c0 8 12 8 12 16s-12 8-12 16M30 8c0 8-12 8-12 16s12 8 12 16"/><path d="M18 14h12M18 34h12"/></svg></div>`
 }
 
 // 지도는 마운트될 때 한 번만 만들고, 이후에는 플레이어/좀비/아이템 마커만
@@ -44,7 +50,7 @@ export default function GameMap({ playerPos, zombies, pickups, follow, areaCente
     if (!map || !playerPos) return
     if (!playerMarkerRef.current) {
       const icon = L.divIcon({
-        html: iconHtml('🏃', 'zr-marker-player'),
+        html: iconHtml('player'),
         className: '',
         iconSize: [36, 36],
         iconAnchor: [18, 18],
@@ -69,15 +75,23 @@ export default function GameMap({ playerPos, zombies, pickups, follow, areaCente
       let marker = zombieMarkersRef.current.get(z.id)
       if (!marker) {
         const icon = L.divIcon({
-          html: iconHtml('💀', 'zr-marker-zombie'),
+          html: iconHtml('zombie', z.state === 'chase' ? 'zr-zombie-chase' : 'zr-zombie-patrol'),
           className: '',
           iconSize: [32, 32],
           iconAnchor: [16, 16],
         })
         marker = L.marker([z.lat, z.lon], { icon }).addTo(map)
+        marker._zrClass = z.state === 'chase' ? 'zr-zombie-chase' : 'zr-zombie-patrol'
         zombieMarkersRef.current.set(z.id, marker)
       } else {
         marker.setLatLng([z.lat, z.lon])
+        const nextClass = z.state === 'chase' ? 'zr-zombie-chase' : 'zr-zombie-patrol'
+        if (marker._zrClass !== nextClass) {
+          marker.setIcon(L.divIcon({
+            html: iconHtml('zombie', nextClass), className: '', iconSize: [52, 52], iconAnchor: [26, 26],
+          }))
+          marker._zrClass = nextClass
+        }
       }
     }
     for (const [id, marker] of zombieMarkersRef.current) {
@@ -96,7 +110,7 @@ export default function GameMap({ playerPos, zombies, pickups, follow, areaCente
       seen.add(p.id)
       if (pickupMarkersRef.current.has(p.id)) continue
       const icon = L.divIcon({
-        html: iconHtml('⏳', `zr-marker-pickup zr-marker-${p.type}`),
+        html: iconHtml('pickup', `zr-marker-${p.type}`),
         className: '',
         iconSize: [28, 28],
         iconAnchor: [14, 14],

@@ -366,53 +366,82 @@ body {
 
 /* ── leaflet 마커 이모지 ── */
 .zr-marker {
-  font-size: 22px;
-  text-align: center;
-  line-height: 1;
-  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.6));
+  width: 52px;
+  height: 52px;
+  position: relative;
+  display: grid;
+  place-items: center;
+  filter: drop-shadow(0 5px 8px rgba(0, 0, 0, 0.55));
 }
 
 /* 참고 이미지처럼: 어두운 지도 위에 색깔 있는 원형 배지 + 은은한 번짐(halo) 효과 */
 .zr-marker-player,
 .zr-marker-zombie {
-  width: 32px;
-  height: 32px;
   border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
+  box-shadow: 0 0 0 3px #132536, 0 0 24px rgba(141, 205, 255, .38);
+  overflow: visible;
+}
+.zr-marker svg {
+  width: 34px;
+  height: 34px;
   position: relative;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+  z-index: 2;
+}
+.zr-marker-player svg { fill: #e8f6ff; stroke: #e8f6ff; stroke-linecap: round; stroke-linejoin: round; }
+.zr-marker-zombie svg { fill: #ffd8c9; stroke: #ffd8c9; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+.zr-marker-aura, .zr-marker-threat-ring, .zr-pickup-glow {
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  border: 1px solid rgba(141, 205, 255, .52);
+  animation: zr-ring-pulse 1.9s ease-out infinite;
+}
+.zr-marker-threat-ring { border-color: rgba(255, 147, 104, .85); animation-duration: 1.05s; }
+.zr-zombie-label {
+  position: absolute;
+  top: -18px;
+  z-index: 3;
+  color: #ffc3ae;
+  font: 800 9px/1 Consolas, monospace;
+  letter-spacing: 1px;
+  text-shadow: 0 1px 3px #07111b;
 }
 
 .zr-marker-player {
-  background: radial-gradient(circle at 35% 30%, #6fe3ff, #0288d1 75%);
+  background: radial-gradient(circle at 35% 30%, #9edbff, #2b77ac 75%);
   border: 2px solid rgba(255, 255, 255, 0.4);
 }
 
-.zr-marker-player::after {
-  content: '';
-  position: absolute;
-  inset: -7px;
-  border-radius: 50%;
-  border: 2px solid rgba(41, 182, 246, 0.5);
-  animation: zr-ring-pulse 2s ease-out infinite;
-}
-
 .zr-marker-zombie {
-  background: radial-gradient(circle at 35% 30%, #ff6f60, #b71c1c 75%);
+  background: radial-gradient(circle at 35% 30%, #ffaf91, #9b3d3f 75%);
   border: 2px solid rgba(255, 255, 255, 0.3);
-  animation: zr-shake 0.6s infinite;
 }
+.zr-zombie-chase { animation: zr-shake 0.42s infinite; box-shadow: 0 0 0 3px #341f25, 0 0 30px rgba(255, 119, 92, .7); }
+.zr-zombie-patrol { opacity: .86; }
+.zr-marker-pickup { color: #ffe28a; }
+.zr-marker-pickup svg { fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.zr-marker-pickup .zr-pickup-glow { border-color: rgba(255, 226, 138, .65); animation-duration: 2.4s; }
+.zr-marker-pickup { filter: drop-shadow(0 0 10px rgba(255, 226, 138, .55)); }
 
 .zr-marker-zombie::after {
   content: '';
   position: absolute;
-  inset: -7px;
+  inset: -4px;
   border-radius: 50%;
-  border: 2px solid rgba(239, 83, 80, 0.6);
-  animation: zr-ring-pulse 1.4s ease-out infinite;
+  border: 1px dashed rgba(255, 195, 174, 0.55);
+}
+
+/* The chase state has a more urgent visual language than a patrol marker. */
+.zr-zombie-chase::after { border-color: #ffb49f; }
+
+.zr-marker-zombie:hover, .zr-marker-player:hover, .zr-marker-pickup:hover { z-index: 10; }
+
+.zr-marker-player::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  border: 1px solid rgba(222, 244, 255, .82);
 }
 
 @keyframes zr-ring-pulse {
@@ -437,7 +466,8 @@ body {
 }
 
 .zr-marker-pickup {
-  font-size: 20px;
+  width: 44px;
+  height: 44px;
 }
 
 .zr-point-marker {
