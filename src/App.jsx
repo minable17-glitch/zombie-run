@@ -12,6 +12,7 @@ import { ensureOwnProfile } from './lib/authHelpers.js'
 import { accountLanding, passwordRecoveryExpired } from './lib/authLanding.js'
 import { readRoom, updateRoomStat } from './lib/roomApi.js'
 import { readFix, GPS_STALE_MS } from './lib/gameSafety.js'
+import { isLocalTestMode, makeTestPosition } from './lib/testMode.js'
 import {
   makeInitialGame, applyStartSetup, advanceGame, updatePosition, findRouteCandidate,
   closestRouteIndex, formatTime, formatPace, START_HEALTH,
@@ -236,7 +237,7 @@ function GameApp() {
 
   const startRun = useCallback((config, session) => {
     if (startingRef.current || game.status === 'playing') return Promise.resolve(false)
-    if (!navigator.geolocation) {
+    if (!navigator.geolocation && !isLocalTestMode()) {
       setGeoError('이 기기/브라우저는 위치 정보를 지원하지 않아요.')
       return Promise.resolve(false)
     }
@@ -254,13 +255,16 @@ function GameApp() {
         }
         resolve(false)
       }
-      navigator.geolocation.getCurrentPosition(position => {
+      const beginWithPosition = position => {
         if (request !== startRequestRef.current) return resolve(false)
-        const startPos = readFix(position)
-        if (!startPos) return fail('GPS 신호가 부정확해요. 야외에서 다시 시작해주세요.')
+        const gpsStartPos = readFix(position)
+        if (!gpsStartPos) return fail('GPS 신호가 부정확해요. 야외에서 다시 시작해주세요.')
         const forcedMap = config.mapId ? zombieMaps.find(m => m.id === config.mapId) : null
         if (config.mapId && !forcedMap) return fail('선택한 지도가 없어요. 방에서 지도를 다시 선택해주세요.')
-        if (forcedMap && haversineDistance(startPos.lat, startPos.lon, forcedMap.center.lat, forcedMap.center.lon) > forcedMap.radius)
+        const startPos = isLocalTestMode() && forcedMap
+          ? { ...gpsStartPos, lat: forcedMap.center.lat, lon: forcedMap.center.lon }
+          : gpsStartPos
+        if (!isLocalTestMode() && forcedMap && haversineDistance(startPos.lat, startPos.lon, forcedMap.center.lat, forcedMap.center.lon) > forcedMap.radius)
           return fail('방장이 선택한 지도 구역 안으로 이동한 뒤 다시 시도해주세요.')
         clearInterval(tickIntervalRef.current)
         clearInterval(teammatesPollRef.current)
@@ -278,10 +282,20 @@ function GameApp() {
           zombieMaps, forcedMap,
         })
         if (matched) toast('선택된 좀비 경로로 시작해요: ' + matched.name)
-        watchIdRef.current = navigator.geolocation.watchPosition(handlePosition,
-          () => { game.lastFix = null; setGeoError('GPS 신호가 끊겨 게임이 잠시 멈춰요.') },
-          { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 })
-        tickIntervalRef.current = setInterval(tick, 1000)
+        if (isLocalTestMode()) {
+          let testStep = 0
+          watchIdRef.current = null
+          tickIntervalRef.current = setInterval(() => {
+            testStep += 1
+            handlePosition(makeTestPosition(Date.now(), testStep, startPos))
+            tick()
+          }, 1000)
+        } else {
+          watchIdRef.current = navigator.geolocation.watchPosition(handlePosition,
+            () => { game.lastFix = null; setGeoError('GPS 신호가 끊겨 게임이 잠시 멈춰요.') },
+            { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 })
+          tickIntervalRef.current = setInterval(tick, 1000)
+        }
         if (session) {
           pollTeammates()
           teammatesPollRef.current = setInterval(pollTeammates, ROOM_TEAMMATES_POLL_MS)
@@ -290,8 +304,14 @@ function GameApp() {
         setStarting(false)
         rerender()
         resolve(true)
-      }, () => fail('위치를 확인하지 못했어요. 위치 권한을 확인하고 다시 시도해주세요.'),
-      { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 })
+      }
+      if (isLocalTestMode()) {
+        queueMicrotask(() => beginWithPosition(makeTestPosition()))
+      } else {
+        navigator.geolocation.getCurrentPosition(beginWithPosition,
+          () => fail('위치를 확인하지 못했어요. 위치 권한을 확인하고 다시 시도해주세요.'),
+          { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 })
+      }
     })).catch(() => {
       if (request === startRequestRef.current) {
         startingRef.current = false
@@ -461,7 +481,7 @@ function GameApp() {
 
           {geoError && <p className="zr-error">{geoError}</p>}
           <button className="zr-btn zr-btn-primary" onClick={requestLocationAndStart} disabled={starting}>
-            {starting ? '위치 확인 중…' : '도망치기 시작 🏃'}
+            {starting ? '위치 확인 중…' : isLocalTestMode() ? '테스트 위치로 시작 🧪' : '도망치기 시작 🏃'}
           </button>
           <button className="zr-btn zr-btn-ghost" disabled={starting} onClick={() => setMode('room')}>
             👥 그룹으로 같이 뛰기
@@ -470,6 +490,7 @@ function GameApp() {
             🛠️ 내 좀비 경로 만들기 (로그인 필요)
           </button>
           <p className="zr-location-note">위치 권한 필요 · 야외에서 시작해주세요</p>
+          {isLocalTestMode() && <p className="zr-test-note">로컬 테스트 모드 · 가상 위치로 진행 중</p>}
         </div>
       </div>
     )

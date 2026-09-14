@@ -4,6 +4,7 @@ import { supabase, supabaseProjectRef } from './lib/supabaseClient.js'
 import { clampToRadius, formatDistance, haversineDistance, pathLength } from './lib/geo.js'
 import { mapNameError, normalizeMapName, rowToZombieMap } from './lib/zombieMaps.js'
 import { useBackableStep } from './lib/useBackableStep.js'
+import { isLocalTestMode, TEST_CENTER } from './lib/testMode.js'
 
 const DEFAULT_RADIUS_M = 400
 
@@ -29,6 +30,10 @@ export default function AdminRouteEditor({ onBack, onSaved, onLogout, session })
   const [saved, setSaved] = useState(false)
 
   useEffect(() => {
+    if (isLocalTestMode()) {
+      setCenter(TEST_CENTER)
+      return
+    }
     if (!('geolocation' in navigator)) {
       setGeoError('이 기기/브라우저는 위치 정보를 지원하지 않아요.')
       return

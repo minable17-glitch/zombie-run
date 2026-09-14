@@ -725,6 +725,7 @@ form label { display: block; font-size: 13px; color: #d0dbe6; }
 .zr-launch-card .zr-title { font-size: 25px; }
 .zr-mode-description { color: var(--muted); font-size: 12px; min-height: 36px; line-height: 1.7; margin-bottom: 20px; }
 .zr-location-note { text-align: center; font-size: 11px; color: #93a5b8; margin: 12px 0 0; }
+.zr-test-note { text-align: center; color: #ffbf9d; font: 700 10px/1.5 Consolas, monospace; letter-spacing: .5px; margin: 6px 0 0; }
 @media(min-width: 1000px) { .zr-admin-panel { left: 24px; bottom: 24px; right: auto; width: 380px; border: 1px solid var(--line); border-radius: 20px; max-height: calc(100dvh - 150px); } }
 @media(max-width: 800px) {
   .zr-home { display: flex; align-items: stretch; padding: 28px 20px; gap: 30px; }
