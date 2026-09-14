@@ -11,7 +11,7 @@ import { fetchZombieMaps } from './lib/zombieMaps.js'
 import { useBackableStep } from './lib/useBackableStep.js'
 import RoomLobby from './RoomLobby.jsx'
 import { ensureOwnProfile } from './lib/authHelpers.js'
-import { accountLanding } from './lib/authLanding.js'
+import { accountLanding, passwordRecoveryExpired } from './lib/authLanding.js'
 import { readRoom, updateRoomStat } from './lib/roomApi.js'
 import { readFix, GPS_STALE_MS } from './lib/gameSafety.js'
 import {
@@ -99,9 +99,10 @@ export default function App() {
 
   useEffect(() => {
     const url = new URL(window.location.href)
-    if (accountLanding) {
+    if (accountLanding || passwordRecoveryExpired) {
       setMode('admin')
       url.searchParams.delete('account')
+      if (passwordRecoveryExpired) url.hash = ''
       window.history.replaceState(window.history.state, '', url)
     }
   }, [setMode])
@@ -343,7 +344,11 @@ export default function App() {
       )
     }
     if (supabase && !adminSession) {
-      return <AuthScreen onBack={() => setMode('game')} />
+      return <AuthScreen onBack={() => setMode('game')}
+        initialTab={passwordRecoveryExpired ? 'forgot' : 'login'}
+        initialMessage={passwordRecoveryExpired
+          ? '이 재설정 링크는 만료됐거나 이미 사용됐어요. 아이디를 입력해 새 메일을 받은 뒤, 가장 최근 메일을 열어주세요.'
+          : ''} />
     }
     if (adminSession && !profileReady) {
       return <div className="zr-screen zr-start"><div className="zr-start-card">

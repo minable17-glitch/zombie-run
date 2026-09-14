@@ -6,7 +6,7 @@ vi.mock('../src/lib/authHelpers.js',()=>({
  authRequest:vi.fn(),loginWithUsername:vi.fn(),normalizeUsername:s=>s.trim().toLowerCase(),siteUrl:()=> 'https://example.test/',
 }))
 import {supabase} from '../src/lib/supabaseClient.js'
-import {loginWithUsername} from '../src/lib/authHelpers.js'
+import {authRequest,loginWithUsername} from '../src/lib/authHelpers.js'
 import AuthScreen from '../src/AuthScreen.jsx'
 afterEach(cleanup)
 test('confirmation message survives switching to login after signup',async()=>{
@@ -29,5 +29,17 @@ test('enter/double submit cannot issue two requests',async()=>{
  fireEvent.submit(document.querySelector('form')); fireEvent.submit(document.querySelector('form'))
  expect(loginWithUsername).toHaveBeenCalledTimes(1)
  await act(async()=>finish())
+})
+
+test('expired recovery opens password reset request with clear latest-email guidance',async()=>{
+ authRequest.mockResolvedValue({ok:true})
+ render(<AuthScreen onBack={()=>{}} initialTab="forgot"
+   initialMessage="이 재설정 링크는 만료됐거나 이미 사용됐어요."/>)
+ expect(screen.getByRole('status').textContent).toContain('만료')
+ expect(screen.queryByLabelText('비밀번호')).toBeNull()
+ fireEvent.change(screen.getByLabelText('아이디'),{target:{value:'Runner'}})
+ await act(async()=>fireEvent.submit(document.querySelector('form')))
+ expect(authRequest).toHaveBeenCalledWith('reset',{username:'runner'})
+ expect(screen.getByRole('status').textContent).toContain('가장 최근에 받은 메일')
 })
 

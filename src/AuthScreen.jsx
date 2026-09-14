@@ -3,15 +3,15 @@ import { supabase } from './lib/supabaseClient.js'
 import { authRequest, loginWithUsername, normalizeUsername, siteUrl } from './lib/authHelpers.js'
 
 const USERNAME_RE = /^[a-z0-9_]{3,20}$/
-export default function AuthScreen({ onBack }) {
-  const [tab, setTab] = useState('login')
+export default function AuthScreen({ onBack, initialTab = 'login', initialMessage = '' }) {
+  const [tab, setTab] = useState(initialTab)
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const busyRef = useRef(false)
   const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
+  const [message, setMessage] = useState(initialMessage)
   const switchTab = next => { setTab(next); setError(''); setMessage('') }
   const submit = async event => {
     event.preventDefault()
@@ -43,7 +43,7 @@ export default function AuthScreen({ onBack }) {
           tab === 'findId' ? { email: email.trim().toLowerCase() } : { username: normalizeUsername(username) })
         setMessage(tab === 'findId'
           ? '가입된 이메일이라면 로그인 링크를 보냈어요. 링크로 접속하면 내 아이디를 확인할 수 있어요.'
-          : '가입된 아이디라면 비밀번호 재설정 메일을 보냈어요. 메일함을 확인해주세요.')
+          : '가입된 아이디라면 재설정 메일을 보냈어요. 가장 최근에 받은 메일만 열어주세요. 이전 링크는 사용할 수 없어요.')
       }
     } catch (e) { setError(e.message || '요청을 처리하지 못했어요.') }
     finally { busyRef.current = false; setBusy(false) }

@@ -1,7 +1,7 @@
 import React from 'react'
 import { test, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
-vi.mock('../src/lib/authLanding.js', () => ({ accountLanding: true }))
+vi.mock('../src/lib/authLanding.js', () => ({ accountLanding: true, passwordRecoveryExpired: false }))
 vi.mock('../src/lib/supabaseClient.js', () => ({ supabase: {
   auth: {
     getSession: async () => ({ data: { session: { user: { id: 'own-user' } } } }),
