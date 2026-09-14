@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import AdminMap from './AdminMap.jsx'
 import { supabase, supabaseProjectRef } from './lib/supabaseClient.js'
 import { clampToRadius, formatDistance, pathLength } from './lib/geo.js'
-import { rowToZombieMap } from './lib/zombieMaps.js'
+import { mapNameError, normalizeMapName, rowToZombieMap } from './lib/zombieMaps.js'
 import { useBackableStep } from './lib/useBackableStep.js'
 
 const DEFAULT_RADIUS_M = 400
@@ -136,7 +136,16 @@ export default function AdminRouteEditor({ onBack, onSaved, onLogout, session })
     onSaved?.()
   }
 
-  const confirmArea = () => setStep('routes')
+  const confirmArea = () => {
+    const error = mapNameError(mapName, savedMaps, editingMapId)
+    if (error) {
+      setSaveError(error)
+      return
+    }
+    setMapName(normalizeMapName(mapName))
+    setSaveError('')
+    setStep('routes')
+  }
 
   const totalRoutes = routes.length + (currentRoute.length >= 2 ? 1 : 0)
 
@@ -146,13 +155,18 @@ export default function AdminRouteEditor({ onBack, onSaved, onLogout, session })
       return
     }
     const allRoutes = currentRoute.length >= 2 ? [...routes, currentRoute] : routes
+    const nameError = mapNameError(mapName, savedMaps, editingMapId)
+    if (nameError) {
+      setSaveError(nameError)
+      return
+    }
     // 새 지도는 경로가 하나는 있어야 저장 의미가 있지만, 기존 지도를 수정하는 중이면
     // 경로를 전부 지우고(초기화) 빈 채로 저장(= 이 위치의 좀비를 없앰)하는 것도 허용함
     if ((allRoutes.length === 0 && !editingMapId) || !center) return
     setSaving(true)
     setSaveError('')
     const payload = {
-      name: mapName.trim() || '이름 없는 지도',
+      name: normalizeMapName(mapName),
       center_lat: center.lat,
       center_lon: center.lon,
       radius_m: radius,
@@ -231,8 +245,9 @@ export default function AdminRouteEditor({ onBack, onSaved, onLogout, session })
                   className="zr-admin-input"
                   placeholder="지도 이름 (예: 우리 동네 공원)" aria-label="지도 이름" maxLength={100}
                   value={mapName}
-                  onChange={(e) => setMapName(e.target.value)}
+                  onChange={(e) => { setMapName(e.target.value); setSaveError('') }}
                 />
+                {saveError && <p role="alert" className="zr-error">{saveError}</p>}
                 <div className="zr-admin-row">
                   <span className="zr-pace-label" style={{ margin: 0 }}>
                     플레이 반경 {radius}m
@@ -332,11 +347,11 @@ export default function AdminRouteEditor({ onBack, onSaved, onLogout, session })
                   완성된 경로 {routes.length}개{totalRoutes !== routes.length ? ' (+ 지금 그리는 중 1개)' : ''} — 경로마다 좀비
                   1마리가 그 위를 왔다갔다 순찰해요. 구역 밖을 탭해도 자동으로 구역 안쪽으로 당겨져요.
                 </p>
-                {saveError && <p className="zr-error">{saveError}</p>}
+                {saveError && <p role="alert" className="zr-error">{saveError}</p>}
                 <button
                   className="zr-btn zr-btn-primary"
                   onClick={saveMap}
-                  disabled={(totalRoutes === 0 && !editingMapId) || saving}
+                  disabled={(totalRoutes === 0 && !editingMapId) || saving || Boolean(mapNameError(mapName, savedMaps, editingMapId))}
                 >
                   {saving
                     ? '저장 중…'
