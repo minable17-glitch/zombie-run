@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import AuthScreen from './AuthScreen.jsx'
 import ResetPassword from './ResetPassword.jsx'
+import RunBriefing from './RunBriefing.jsx'
 import { formatDistance, haversineDistance } from './lib/geo.js'
 import { fetchWalkingPath } from './lib/routing.js'
 import { supabase } from './lib/supabaseClient.js'
@@ -404,21 +405,18 @@ function GameApp() {
 
   if (game.status === 'start') {
     return (
-      <div className="zr-screen zr-start">
-        <div className="zr-start-card">
-          <h1 className="zr-title">🧟 좀비 런</h1>
-          <p className="zr-subtitle">실제 GPS를 쓰기 때문에, 살아남는 방법은 진짜로 뛰는 것뿐입니다.</p>
-          <ul className="zr-rules">
-            <li>러닝 시작 60초 뒤, 좀비 무리 등장</li>
-            <li>좀비에게 12m 안으로 붙잡히면 생명이 줄어요</li>
-            <li>모래시계(⏳) 아이템으로 좀비 10초간 정지</li>
-            <li>오직 도망치는 것만이 살아남는 방법!</li>
-          </ul>
+      <div className="zr-screen zr-start zr-home">
+        <RunBriefing />
+        <div className="zr-start-card zr-launch-card">
+          <p className="zr-eyebrow">READY TO RUN</p>
+          <h2 className="zr-title">오늘의 러닝 설정</h2>
+          <p className="zr-subtitle">추격 속도를 정하고, 출발하세요.</p>
           <p className="zr-pace-label">목표 페이스 (좀비가 이 속도로 쫓아와요)</p>
           <div className="zr-pace-picker">
             {PACE_PRESETS.map((p, i) => (
               <button
                 key={p.label}
+                aria-pressed={i === paceIdx}
                 className={i === paceIdx ? 'zr-pace-btn zr-pace-btn-on' : 'zr-pace-btn'}
                 onClick={() => setPaceIdx(i)}
               >
@@ -442,6 +440,7 @@ function GameApp() {
               제한구역 모드
             </button>
           </div>
+          <p className="zr-mode-description">{playMode === 'free' ? '정해진 구역 없이, 원하는 길로 달리세요.' : '선택한 반경 안에서 도망치는 구역 생존 모드.'}</p>
           {playMode === 'restricted' && (
             <>
               <p className="zr-pace-label">플레이 반경 (지금 위치 기준)</p>
@@ -470,6 +469,7 @@ function GameApp() {
           <button className="zr-admin-link" disabled={starting} onClick={() => setMode('admin')}>
             🛠️ 내 좀비 경로 만들기 (로그인 필요)
           </button>
+          <p className="zr-location-note">위치 권한 필요 · 야외에서 시작해주세요</p>
         </div>
       </div>
     )

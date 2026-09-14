@@ -51,6 +51,7 @@ export default function AuthScreen({ onBack, initialTab = 'login', initialMessag
   const labels = { login: '로그인', signup: '계정 만들기', findId: '아이디 찾기', forgot: '비번 찾기' }
   return (
     <div className="zr-screen zr-start"><div className="zr-start-card">
+      <p className="zr-eyebrow">ZOMBIE RUN / ACCOUNT</p>
       <h1 className="zr-title">계정</h1>
       <p className="zr-subtitle">로그인하면 나만의 좀비 경로를 만들고 수정할 수 있어요.</p>
       <div className="zr-pace-picker" style={{ marginBottom: 14 }}>
