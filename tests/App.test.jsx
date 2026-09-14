@@ -51,7 +51,7 @@ test('GPS failure permits retry; stale signal pauses time and damage',async()=>{
  act(()=>vi.advanceTimersByTime(5000))
  expect(screen.getByText('0:15')).toBeTruthy()
 })
-test('a patrol zombie cannot remove a heart every second during grace period',async()=>{
+test('a selected-route zombie stays on its route while the game is running',async()=>{
  state.maps=[{id:'map',name:'Test',center:{lat:37,lon:127},radius:400,
  routes:[[{lat:37,lon:127},{lat:37.001,lon:127}]]}]
  await renderApp()
@@ -62,6 +62,6 @@ test('a patrol zombie cannot remove a heart every second during grace period',as
  act(()=>vi.advanceTimersByTime(4000))
  expect(document.querySelectorAll('.zr-heart-on')).toHaveLength(5)
  act(()=>vi.advanceTimersByTime(1000))
- expect(document.querySelectorAll('.zr-heart-on')).toHaveLength(4)
+ expect(document.querySelectorAll('.zr-heart-on')).toHaveLength(5)
 })
 

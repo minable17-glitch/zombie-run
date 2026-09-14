@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest'
-import { advanceGame, makeInitialGame } from '../src/lib/gameEngine.js'
+import { advanceGame, applyStartSetup, makeInitialGame } from '../src/lib/gameEngine.js'
 
 function playing() {
   return { ...makeInitialGame(), status: 'playing', playerPos: { lat: 37, lon: 127 } }
@@ -38,4 +38,18 @@ test('outside-area penalties occur once per accumulated hour', () => {
   advanceGame(game, 1, 2000)
   expect(game.health).toBe(5)
   expect(game.outsideAreaHeartsLost).toBe(1)
+})
+
+test('a selected map keeps zombies on the authored route instead of chasing the runner', () => {
+  const game = playing()
+  const route = [{ lat: 37, lon: 127 }, { lat: 37.001, lon: 127 }]
+  applyStartSetup(game, { lat: 37, lon: 127 }, {
+    paceMps: 2, playMode: 'free', radiusM: 400,
+    zombieMaps: [{ id: 'map', name: '공원', center: { lat: 37, lon: 127 }, radius: 400, routes: [route] }],
+    forcedMap: null,
+  })
+  const before = game.zombies[0]
+  advanceGame(game, 1, 1000)
+  expect(game.zombies[0].state).toBe('patrol')
+  expect(game.zombies[0].lat).not.toBe(before.lat)
 })

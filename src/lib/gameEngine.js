@@ -40,8 +40,6 @@ const PICKUP_SPAWN_SPREAD_DEG = 40 // 아이템은 "앞쪽" 기준 ±이 각도 
 
 // 관리자가 미리 그려둔 좀비 순찰 경로 (src/data/zombieMaps.json). 시작 위치가 그 지도의
 // center/radius 안이면 동적 스폰 대신 이 경로를 그대로 씀
-const AGGRO_RADIUS_M = 40 // 순찰 중인 좀비가 이 거리 안의 플레이어를 발견하면 추격 시작
-const LEASH_DISTANCE_M = 100 // 추격 시작 지점에서 플레이어가 이만큼 멀어지면 좀비가 추격을 포기하고 순찰로 복귀
 
 export function formatTime(totalSec) {
   const m = Math.floor(totalSec / 60)
@@ -247,23 +245,10 @@ export function advanceGame(game, dt, now) {
     if (!frozen && game.playerPos && game.zombies.length) {
       game.zombies = game.zombies.map((z) => {
         if (z.patrolRoute) {
-          const distToPlayer = haversineDistance(game.playerPos.lat, game.playerPos.lon, z.lat, z.lon)
-          if (z.state === 'patrol') {
-            if (distToPlayer <= AGGRO_RADIUS_M) return { ...z, state: 'chase', chaseHome: { lat: z.lat, lon: z.lon } }
-            const { lat, lon, patrolIndex, patrolDir } = stepPatrol(z, dt)
-            return { ...z, lat, lon, patrolIndex, patrolDir }
-          }
-          // state === 'chase'
-          const leashDist = haversineDistance(game.playerPos.lat, game.playerPos.lon, z.chaseHome.lat, z.chaseHome.lon)
-          if (leashDist > LEASH_DISTANCE_M) {
-            return { ...z, state: 'patrol', path: null, pathFetchedFor: null, lastRouteAt: 0 }
-          }
-          if (z.path && z.path.length > 1) {
-            const { pos, path } = advanceAlongPath(z.path, z.speed * dt)
-            return { ...z, lat: pos.lat, lon: pos.lon, path }
-          }
-          const next = moveToward(z.lat, z.lon, game.playerPos.lat, game.playerPos.lon, z.speed * dt)
-          return { ...z, lat: next.lat, lon: next.lon }
+          // A saved map is a route challenge: the zombie stays on its authored
+          // path instead of abandoning it to chase the runner.
+          const { lat, lon, patrolIndex, patrolDir } = stepPatrol(z, dt)
+          return { ...z, state: 'patrol', lat, lon, patrolIndex, patrolDir, path: null, chaseHome: null }
         }
         if (z.path && z.path.length > 1) {
           const { pos, path } = advanceAlongPath(z.path, z.speed * dt)

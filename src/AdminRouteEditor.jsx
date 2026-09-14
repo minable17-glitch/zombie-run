@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import AdminMap from './AdminMap.jsx'
 import { supabase, supabaseProjectRef } from './lib/supabaseClient.js'
-import { clampToRadius, formatDistance, pathLength } from './lib/geo.js'
+import { clampToRadius, formatDistance, haversineDistance, pathLength } from './lib/geo.js'
 import { mapNameError, normalizeMapName, rowToZombieMap } from './lib/zombieMaps.js'
 import { useBackableStep } from './lib/useBackableStep.js'
 
@@ -18,6 +18,7 @@ export default function AdminRouteEditor({ onBack, onSaved, onLogout, session })
   const [geoError, setGeoError] = useState('')
   const [mapName, setMapName] = useState('')
   const [radius, setRadius] = useState(DEFAULT_RADIUS_M)
+  const [areaPickMode, setAreaPickMode] = useState('center')
   const [routes, setRoutes] = useState([])
   const [currentRoute, setCurrentRoute] = useState([])
   const [editingMapId, setEditingMapId] = useState(null)
@@ -65,13 +66,19 @@ export default function AdminRouteEditor({ onBack, onSaved, onLogout, session })
     (point) => {
       if (!center) return
       if (step === 'area') {
-        setCenter(point)
+        if (areaPickMode === 'center') {
+          setCenter(point)
+          setAreaPickMode('radius')
+        } else {
+          setRadius(Math.round(Math.min(1500, Math.max(100, haversineDistance(center.lat, center.lon, point)))))
+        }
+        setSaveError('')
         return
       }
       const clamped = clampToRadius(point, center, radius)
       setCurrentRoute((prev) => [...prev, clamped])
     },
-    [step, center, radius]
+    [step, center, radius, areaPickMode]
   )
 
   const undoPoint = () => setCurrentRoute((prev) => prev.slice(0, -1))
@@ -94,6 +101,7 @@ export default function AdminRouteEditor({ onBack, onSaved, onLogout, session })
     setEditingMapId(null)
     setMapName('')
     setRadius(DEFAULT_RADIUS_M)
+    setAreaPickMode('center')
     setRoutes([])
     setCurrentRoute([])
     setStep('area')
@@ -104,6 +112,7 @@ export default function AdminRouteEditor({ onBack, onSaved, onLogout, session })
     setMapName(map.name)
     setCenter(map.center)
     setRadius(map.radius)
+    setAreaPickMode('radius')
     setRoutes(map.routes)
     setCurrentRoute([])
     setStep('routes')
@@ -252,20 +261,14 @@ export default function AdminRouteEditor({ onBack, onSaved, onLogout, session })
                   <span className="zr-pace-label" style={{ margin: 0 }}>
                     플레이 반경 {radius}m
                   </span>
-                  <input
-                    type="range"
-                    min="100"
-                    max="1500"
-                    step="50"
-                    value={radius}
-                    onChange={(e) => setRadius(Number(e.target.value))}
-                  />
+                  {areaPickMode === 'radius' && <button className="zr-btn zr-btn-ghost zr-btn-small" onClick={() => setAreaPickMode('center')}>중심 다시 선택</button>}
                 </div>
                 <p className="zr-pace-hint" style={{ margin: '4px 0' }}>
-                  빨간 원이 실제 플레이 구역이에요. 꼭 지금 있는 위치가 아니어도 돼요 — 지도를 손가락으로
-                  움직이거나 확대/축소해서 원하는 곳으로 이동한 뒤, 그 위치를 탭하면 중심(🏁)이 거기로
-                  옮겨져요. 확정하면 이 안에서만 경로를 그릴 수 있어요.
+                  {areaPickMode === 'center'
+                    ? '1단계 · 지도의 원하는 중심을 눌러주세요. 현재 위치를 기준으로 시작하려면 빨간 중심을 그대로 두고 한 번 눌러주세요.'
+                    : '2단계 · 중심에서 원하는 가장자리를 한 번 더 눌러 반경을 정하세요. 빨간 원이 실제 플레이 구역입니다.'}
                 </p>
+                {saveError && <p role="alert" className="zr-error">{saveError}</p>}
                 <button className="zr-btn zr-btn-primary" onClick={confirmArea}>
                   구역 확정하고 경로 그리기 →
                 </button>

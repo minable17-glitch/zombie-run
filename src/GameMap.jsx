@@ -75,17 +75,17 @@ export default function GameMap({ playerPos, zombies, pickups, follow, areaCente
       let marker = zombieMarkersRef.current.get(z.id)
       if (!marker) {
         const icon = L.divIcon({
-          html: iconHtml('zombie', z.state === 'chase' ? 'zr-zombie-chase' : 'zr-zombie-patrol'),
+          html: iconHtml('zombie', z.patrolRoute && z.state !== 'chase' ? 'zr-zombie-patrol' : 'zr-zombie-chase'),
           className: '',
           iconSize: [32, 32],
           iconAnchor: [16, 16],
         })
         marker = L.marker([z.lat, z.lon], { icon }).addTo(map)
-        marker._zrClass = z.state === 'chase' ? 'zr-zombie-chase' : 'zr-zombie-patrol'
+        marker._zrClass = z.patrolRoute && z.state !== 'chase' ? 'zr-zombie-patrol' : 'zr-zombie-chase'
         zombieMarkersRef.current.set(z.id, marker)
       } else {
         marker.setLatLng([z.lat, z.lon])
-        const nextClass = z.state === 'chase' ? 'zr-zombie-chase' : 'zr-zombie-patrol'
+        const nextClass = z.patrolRoute && z.state !== 'chase' ? 'zr-zombie-patrol' : 'zr-zombie-chase'
         if (marker._zrClass !== nextClass) {
           marker.setIcon(L.divIcon({
             html: iconHtml('zombie', nextClass), className: '', iconSize: [52, 52], iconAnchor: [26, 26],
