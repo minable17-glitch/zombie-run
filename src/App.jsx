@@ -1,6 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import GameMap from './GameMap.jsx'
-import AdminRouteEditor from './AdminRouteEditor.jsx'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import AuthScreen from './AuthScreen.jsx'
 import ResetPassword from './ResetPassword.jsx'
 import { formatDistance, haversineDistance } from './lib/geo.js'
@@ -9,7 +7,6 @@ import { supabase } from './lib/supabaseClient.js'
 import { AREA_RADIUS_PRESETS, DEFAULT_PACE_IDX, DEFAULT_RADIUS_IDX, PACE_PRESETS } from './lib/gameConfig.js'
 import { fetchZombieMaps } from './lib/zombieMaps.js'
 import { useBackableStep } from './lib/useBackableStep.js'
-import RoomLobby from './RoomLobby.jsx'
 import { ensureOwnProfile } from './lib/authHelpers.js'
 import { accountLanding, passwordRecoveryExpired } from './lib/authLanding.js'
 import { readRoom, updateRoomStat } from './lib/roomApi.js'
@@ -23,6 +20,14 @@ import {
 // OpenRouteService 키가 있으면 좀비가 실제 도로/인도 경로를 따라 쫓아오고,
 // 없으면(또는 요청 실패 시) 자동으로 직선 이동으로 대체됨
 const ORS_API_KEY = import.meta.env.VITE_ORS_API_KEY
+let GameMap
+const loadGameMap = async () => {
+  const module = await import('./GameMap.jsx')
+  GameMap = module.default
+}
+const AdminRouteEditor = lazy(() => import('./AdminRouteEditor.jsx'))
+const RoomLobby = lazy(() => import('./RoomLobby.jsx'))
+const loadingScreen = <div className="zr-screen zr-start"><p role="status">화면을 불러오는 중…</p></div>
 // 내 생존 상태를 방(그룹)에 올림. 실패해도 게임에는 영향 없음 (다음 주기에 다시 시도됨)
 function pushRoomStat(game, status) {
   if (!supabase || !game.roomId || !game.roomPlayerId) return
@@ -30,6 +35,10 @@ function pushRoomStat(game, status) {
 }
 
 export default function App() {
+  return <Suspense fallback={loadingScreen}><GameApp /></Suspense>
+}
+
+function GameApp() {
   const gameRef = useRef(null)
   if (!gameRef.current) gameRef.current = makeInitialGame()
   const game = gameRef.current
@@ -234,7 +243,8 @@ export default function App() {
     setStarting(true)
     setGeoError('')
     const request = ++startRequestRef.current
-    return new Promise(resolve => {
+    return loadGameMap().then(() => new Promise(resolve => {
+      if (request !== startRequestRef.current) return resolve(false)
       const fail = message => {
         if (request === startRequestRef.current) {
           startingRef.current = false
@@ -281,6 +291,13 @@ export default function App() {
         resolve(true)
       }, () => fail('위치를 확인하지 못했어요. 위치 권한을 확인하고 다시 시도해주세요.'),
       { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 })
+    })).catch(() => {
+      if (request === startRequestRef.current) {
+        startingRef.current = false
+        setStarting(false)
+        setGeoError('지도를 불러오지 못했어요. 연결을 확인하고 다시 시작해주세요.')
+      }
+      return false
     })
   }, [game, zombieMaps, handlePosition, tick, pollTeammates, toast, rerender])
 

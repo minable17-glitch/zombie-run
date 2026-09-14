@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 
 // GameMap과 동일: 키가 필요 없는 OSM 타일을 CSS 필터로 어둡게 반전시켜 씀 (index.css 참고)
 const TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'

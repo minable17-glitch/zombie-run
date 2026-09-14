@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 
 // CARTO 다크 타일은 이제 API 키가 있어야 해서(무료 익명 사용 중단), 대신 키가 필요 없는
 // 기본 OSM 타일을 그대로 쓰고 CSS 필터로 어둡게 반전시킴 (index.css의 .zr-map 규칙 참고)
