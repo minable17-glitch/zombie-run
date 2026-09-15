@@ -1,5 +1,6 @@
 import { test, expect } from 'vitest'
 import { advanceGame, applyStartSetup, makeInitialGame, updatePosition } from '../src/lib/gameEngine.js'
+import { haversineDistance } from '../src/lib/geo.js'
 
 function playing() {
   return { ...makeInitialGame(), status: 'playing', playerPos: { lat: 37, lon: 127 } }
@@ -43,15 +44,56 @@ test('outside-area penalties occur once per accumulated hour', () => {
 test('a selected map keeps zombies on the authored route instead of chasing the runner', () => {
   const game = playing()
   const route = [{ lat: 37, lon: 127 }, { lat: 37.001, lon: 127 }]
-  applyStartSetup(game, { lat: 37, lon: 127 }, {
-    paceMps: 2, playMode: 'free', radiusM: 400,
-    zombieMaps: [{ id: 'map', name: '공원', center: { lat: 37, lon: 127 }, radius: 400, routes: [route] }],
-    forcedMap: null,
+  const map = { id: 'map', name: '공원', center: { lat: 37, lon: 127 }, radius: 400, routes: [route] }
+  const selected = applyStartSetup(game, game.playerPos, {
+    paceMps: 2, playMode: 'free', radiusM: 100, forcedMap: map,
   })
+  expect(selected).toBe(map)
+  expect(game.presetMap).toBe(map)
+  expect(game.areaRadius).toBe(400)
+  game.playerPos = { lat: 37, lon: 127.002 }
   const before = game.zombies[0]
   advanceGame(game, 1, 1000)
   expect(game.zombies[0].state).toBe('patrol')
-  expect(game.zombies[0].lat).not.toBe(before.lat)
+  expect(game.zombies[0].lat).toBeGreaterThan(before.lat)
+  expect(game.zombies[0].lon).toBe(127)
+  game.elapsedSec = 59
+  advanceGame(game, 1, 60000)
+  expect(game.zombies).toHaveLength(1)
+  expect(game.waveCount).toBe(0)
+})
+
+test.each(['free', 'restricted'])('starting %s without selecting a map clears previous patrols and chases the runner', (playMode) => {
+  const game = playing()
+  const startPos = game.playerPos
+  const map = {
+    id: 'map', center: startPos, radius: 400,
+    routes: [[startPos, { lat: 37.001, lon: 127 }]],
+  }
+  applyStartSetup(game, startPos, { paceMps: 2, forcedMap: map })
+  expect(game.zombies[0].patrolRoute).toBe(map.routes[0])
+
+  const selected = applyStartSetup(game, startPos, { paceMps: 2, playMode, radiusM: 200 })
+  expect(selected).toBeNull()
+  expect(game.presetMap).toBeNull()
+  expect(game.playMode).toBe(playMode)
+  expect(game.areaCenter).toEqual(playMode === 'restricted' ? startPos : null)
+  expect(game.areaRadius).toBe(playMode === 'restricted' ? 200 : null)
+  expect(game.zombies).toHaveLength(0)
+
+  game.elapsedSec = 59
+  advanceGame(game, 1, 60000)
+  expect(game.zombies.length).toBeGreaterThan(0)
+  expect(game.zombies.every(zombie => !zombie.patrolRoute)).toBe(true)
+  // Move away from the old route: dynamic zombies must target the new player position.
+  game.playerPos = { lat: 37, lon: 127.002 }
+  const distances = game.zombies.map(zombie =>
+    haversineDistance(zombie.lat, zombie.lon, game.playerPos.lat, game.playerPos.lon))
+  advanceGame(game, 1, 61000)
+  game.zombies.forEach((zombie, index) => {
+    const distance = haversineDistance(zombie.lat, zombie.lon, game.playerPos.lat, game.playerPos.lon)
+    expect(distances[index] - distance).toBeCloseTo(zombie.speed, 4)
+  })
 })
 
 test('collecting an hourglass removes it and freezes zombies for ten seconds', () => {

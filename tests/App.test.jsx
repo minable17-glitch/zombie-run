@@ -4,10 +4,10 @@ import { render, screen, fireEvent, act, cleanup } from '@testing-library/react'
 const state=vi.hoisted(()=>({maps:[]}))
 vi.mock('../src/lib/supabaseClient.js',()=>({supabase:null}))
 vi.mock('../src/lib/zombieMaps.js',()=>({fetchZombieMaps:async()=>state.maps}))
-vi.mock('../src/GameMap.jsx',()=>({default:({zombies})=><div role="region" aria-label="게임 지도" data-testid="game-map">{zombies.length}</div>}))
+vi.mock('../src/GameMap.jsx',()=>({default:({zombies,patrolRoutes,areaCenter})=><div role="region" aria-label="게임 지도" data-testid="game-map" data-patrol-routes={patrolRoutes?.length??0} data-has-boundary={Boolean(areaCenter)}>{zombies.length}</div>}))
 vi.mock('../src/AdminRouteEditor.jsx',()=>({default:()=>null}))
 import App from '../src/App.jsx'
-let callbacks, watch, clearWatch
+let callbacks, watch, watchSuccess, clearWatch
 const fix=()=>({timestamp:Date.now(),coords:{latitude:37,longitude:127,accuracy:5}})
 beforeEach(()=>{
  vi.useFakeTimers()
@@ -16,7 +16,8 @@ beforeEach(()=>{
  window.history.replaceState({},'','/')
  state.maps=[]
  callbacks=[]
- watch=vi.fn(()=>123); clearWatch=vi.fn()
+ watchSuccess=null
+ watch=vi.fn(success=>{watchSuccess=success;return 123}); clearWatch=vi.fn()
  Object.defineProperty(navigator,'geolocation',{configurable:true,value:{
   getCurrentPosition:vi.fn((success,error)=>callbacks.push({success,error})),
   watchPosition:watch,clearWatch,
@@ -60,17 +61,24 @@ test('GPS failure permits retry; stale signal pauses time and damage',async()=>{
  act(()=>vi.advanceTimersByTime(5000))
  expect(screen.getByText('0:15')).toBeTruthy()
 })
-test('a selected-route zombie stays on its route while the game is running',async()=>{
+test('free mode inside a saved map ignores its routes and spawns chasing zombies after sixty seconds',async()=>{
  state.maps=[{id:'map',name:'Test',center:{lat:37,lon:127},radius:400,
  routes:[[{lat:37,lon:127},{lat:37.001,lon:127}]]}]
  await renderApp()
  await act(async()=>fireEvent.click(screen.getByRole('button',{name:'생존 러닝 시작'})))
  await act(async()=>callbacks[0].success(fix()))
- act(()=>vi.advanceTimersByTime(1000))
- expect(screen.getByRole('meter',{name:/생명/}).getAttribute('aria-valuenow')).toBe('5')
- act(()=>vi.advanceTimersByTime(4000))
- expect(screen.getByRole('meter',{name:/생명/}).getAttribute('aria-valuenow')).toBe('5')
- act(()=>vi.advanceTimersByTime(1000))
- expect(screen.getByRole('meter',{name:/생명/}).getAttribute('aria-valuenow')).toBe('5')
+ const map=screen.getByTestId('game-map')
+ expect(screen.getByText('FREE RUN')).toBeTruthy()
+ expect(screen.queryByText('ROUTE RUN')).toBeNull()
+ expect(map.getAttribute('data-patrol-routes')).toBe('0')
+ expect(map.getAttribute('data-has-boundary')).toBe('false')
+ expect(map.textContent).toBe('0')
+ for(let i=0;i<6;i++) {
+  act(()=>{vi.advanceTimersByTime(10000);watchSuccess(fix())})
+ }
+ expect(screen.getByText('1:00')).toBeTruthy()
+ expect(Number(map.textContent)).toBeGreaterThan(0)
+ expect(map.getAttribute('data-patrol-routes')).toBe('0')
+ expect(screen.getByRole('meter',{name:/생명/}).getAttribute('aria-valuenow')).toBe('6')
 })
 

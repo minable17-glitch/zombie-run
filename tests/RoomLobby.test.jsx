@@ -11,6 +11,7 @@ import RoomLobby from '../src/RoomLobby.jsx'
 const room={id:'room',code:'ABC123',status:'waiting',config:{paceIdx:1}}
 beforeEach(()=>{
  vi.useFakeTimers()
+ vi.clearAllMocks()
  rooms.joinRoom.mockResolvedValue({room,player:{id:'player'}})
  rooms.readRoom.mockResolvedValue({room,players:[{id:'player',nickname:'runner'}]})
 })
@@ -42,5 +43,29 @@ test('failed position lookup keeps lobby retry available',async()=>{
  expect(screen.getByText('위치 확인 후 다시 시작')).toBeTruthy()
  await act(async()=>fireEvent.click(screen.getByText('위치 확인 후 다시 시작')))
  expect(onStart).toHaveBeenCalledTimes(2)
+})
+
+test.each([false,true])('authored map selection is explicit when creating and starting a room (selected: %s)',async selected=>{
+ const map={id:'authored-map',name:'공원',radius:400}
+ const config=selected ? {paceIdx:1,mapId:map.id} : {paceIdx:1,playMode:'free',radiusIdx:1}
+ const createdRoom={...room,config}
+ const onStart=vi.fn().mockResolvedValue(true)
+ rooms.createRoom.mockResolvedValue({room:createdRoom,player:{id:'host'}})
+ rooms.readRoom.mockResolvedValue({room:createdRoom,players:[{id:'host',nickname:'runner'}]})
+ rooms.startRoom.mockResolvedValue({...createdRoom,status:'started'})
+ render(<RoomLobby zombieMaps={[map]} onStart={onStart} onBack={()=>{}} />)
+ fireEvent.click(screen.getByRole('button',{name:'방 만들기 (방장)'}))
+ fireEvent.change(screen.getByLabelText('방장 닉네임'),{target:{value:'runner'}})
+ fireEvent.click(screen.getByRole('button',{name:'🗺️ 공원'}))
+ if (!selected) {
+  fireEvent.click(screen.getByRole('button',{name:'지도 선택 안 함'}))
+  fireEvent.click(screen.getByRole('button',{name:'자유 모드'}))
+ }
+ await act(async()=>fireEvent.click(screen.getByRole('button',{name:'방 만들기',exact:true})))
+ expect(rooms.createRoom).toHaveBeenCalledExactlyOnceWith('runner',config)
+ await act(async()=>fireEvent.click(screen.getByRole('button',{name:'다같이 시작하기 (1명)'})))
+ expect(onStart).toHaveBeenCalledExactlyOnceWith(config,{
+  roomId:'room',roomCode:'ABC123',playerId:'host',nickname:'runner',
+ })
 })
 

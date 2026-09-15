@@ -280,7 +280,7 @@ function GameApp() {
           paceMps: (PACE_PRESETS[config.paceIdx] ?? PACE_PRESETS[DEFAULT_PACE_IDX]).mps,
           playMode: config.playMode === 'restricted' ? 'restricted' : 'free',
           radiusM: AREA_RADIUS_PRESETS[config.radiusIdx] ?? AREA_RADIUS_PRESETS[DEFAULT_RADIUS_IDX],
-          zombieMaps, forcedMap,
+          forcedMap,
         })
         if (matched) toast('선택된 좀비 경로로 시작해요: ' + matched.name)
         if (isLocalTestMode()) {

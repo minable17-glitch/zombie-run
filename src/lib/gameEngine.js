@@ -38,9 +38,6 @@ const HEADING_MIN_STEP_M = 15 // 이만큼 움직여야 "달리는 방향"을 �
 const ZOMBIE_SPAWN_SPREAD_DEG = 55 // 좀비는 "뒤쪽" 기준 ±이 각도 안에서 스폰
 const PICKUP_SPAWN_SPREAD_DEG = 40 // 아이템은 "앞쪽" 기준 ±이 각도 안에서 스폰
 
-// 관리자가 미리 그려둔 좀비 순찰 경로 (src/data/zombieMaps.json). 시작 위치가 그 지도의
-// center/radius 안이면 동적 스폰 대신 이 경로를 그대로 씀
-
 export function formatTime(totalSec) {
   const m = Math.floor(totalSec / 60)
   const s = Math.floor(totalSec % 60)
@@ -85,7 +82,7 @@ export function makeInitialGame() {
     outsideAreaHeartsLost: 0, // 그동안 이미 깎은 생명 수 (중복 차감 방지용)
     headingDeg: null, // 지금 달리는 방향 (충분히 움직이기 전까진 null)
     headingAnchor: null, // 방향 계산 기준점
-    presetMap: null, // 관리자가 미리 만들어둔 좀비 지도 (해당되면)
+    presetMap: null, // 플레이할 때 명시적으로 선택한 좀비 지도
     roomId: null, // 방(그룹) 모드일 때만 채워짐
     roomPlayerId: null,
     roomNickname: null,
@@ -148,13 +145,11 @@ export function closestRouteIndex(route, pos) {
   return bestIdx
 }
 
-// 시작 위치가 관리자가 만들어둔 지도의 반경 안이면 그 순찰 경로로 좀비를 배치하고,
-// 아니면 기존 방식(자유/제한구역 모드 + 동적 스폰)을 그대로 씀
-export function applyStartSetup(game, startPos, { paceMps, playMode, radiusM, zombieMaps, forcedMap }) {
+// 지도를 명시적으로 선택했을 때만 저장된 순찰 경로를 적용함.
+// 자유/제한구역 모드는 근처의 저장된 지도와 관계없이 사용자를 추격하는 좀비를 생성함.
+export function applyStartSetup(game, startPos, { paceMps, playMode, radiusM, forcedMap = null }) {
   game.targetPaceMps = paceMps
-  const matched =
-    forcedMap ||
-    zombieMaps.find((m) => haversineDistance(startPos.lat, startPos.lon, m.center.lat, m.center.lon) <= m.radius)
+  const matched = forcedMap
   if (matched) {
     game.presetMap = matched
     game.playMode = 'restricted'
@@ -183,10 +178,9 @@ export function applyStartSetup(game, startPos, { paceMps, playMode, radiusM, zo
   } else {
     game.presetMap = null
     game.playMode = playMode
-    if (playMode === 'restricted') {
-      game.areaCenter = startPos
-      game.areaRadius = radiusM
-    }
+    game.areaCenter = playMode === 'restricted' ? startPos : null
+    game.areaRadius = playMode === 'restricted' ? radiusM : null
+    game.zombies = []
   }
   return matched
 }
