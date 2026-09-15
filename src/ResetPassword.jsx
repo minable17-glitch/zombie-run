@@ -35,7 +35,7 @@ export default function ResetPassword({ onDone }) {
   return (
     <div className="zr-screen zr-start">
       <div className="zr-start-card">
-        <h1 className="zr-title">🔑 새 비밀번호 설정</h1>
+        <h1 className="zr-title">새 비밀번호 설정</h1>
         <p className="zr-subtitle">새로 쓸 비밀번호를 입력해주세요.</p>
         <input
           className="zr-admin-input"

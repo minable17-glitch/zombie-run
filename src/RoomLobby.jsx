@@ -47,7 +47,7 @@ export default function RoomLobby({ zombieMaps = [], onBack, onStart, startError
     return (
       <div className="zr-screen zr-start">
         <div className="zr-start-card">
-          <h1 className="zr-title">👥 그룹으로 같이 뛰기</h1>
+          <h1 className="zr-title">그룹으로 같이 뛰기</h1>
           <p className="zr-error">저장소가 아직 연결 안 됐어요. 관리자에게 Supabase 설정을 문의하세요.</p>
           <button className="zr-btn zr-btn-ghost" onClick={onBack}>
             돌아가기
@@ -158,7 +158,7 @@ export default function RoomLobby({ zombieMaps = [], onBack, onStart, startError
     return (
       <div className="zr-screen zr-start">
         <div className="zr-start-card">
-          <h1 className="zr-title">👥 그룹으로 같이 뛰기</h1>
+          <h1 className="zr-title">그룹으로 같이 뛰기</h1>
           <p className="zr-subtitle">
             방을 만들어 코드를 공유하면, 참가자들이 다 들어온 뒤 다같이 시작할 수 있어요. 시작하면 각자 자기
             좀비를 만나지만, 서로의 거리·생존 상태는 실시간으로 볼 수 있어요.

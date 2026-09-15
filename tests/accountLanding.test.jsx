@@ -20,5 +20,5 @@ test('email recovery displays the verified username even after SDK removes URL m
   render(<React.StrictMode><App /></React.StrictMode>)
   expect(await screen.findByText('runner123')).toBeTruthy()
   expect(screen.getByRole('heading', { name: '아이디 찾기' })).toBeTruthy()
-  expect(screen.queryByText('도망치기 시작 🏃')).toBeNull()
+  expect(screen.queryByRole('button', { name: '생존 러닝 시작' })).toBeNull()
 })

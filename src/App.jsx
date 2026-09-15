@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import AuthScreen from './AuthScreen.jsx'
 import ResetPassword from './ResetPassword.jsx'
 import RunBriefing from './RunBriefing.jsx'
+import GameIcon from './GameIcon.jsx'
 import { formatDistance, haversineDistance } from './lib/geo.js'
 import { fetchWalkingPath } from './lib/routing.js'
 import { supabase } from './lib/supabaseClient.js'
@@ -448,12 +449,14 @@ function GameApp() {
           <p className="zr-pace-label">플레이 모드</p>
           <div className="zr-pace-picker zr-pace-picker-2col">
             <button
+              aria-pressed={playMode === 'free'}
               className={playMode === 'free' ? 'zr-pace-btn zr-pace-btn-on' : 'zr-pace-btn'}
               onClick={() => setPlayMode('free')}
             >
               자유 모드
             </button>
             <button
+              aria-pressed={playMode === 'restricted'}
               className={playMode === 'restricted' ? 'zr-pace-btn zr-pace-btn-on' : 'zr-pace-btn'}
               onClick={() => setPlayMode('restricted')}
             >
@@ -468,6 +471,7 @@ function GameApp() {
                 {AREA_RADIUS_PRESETS.map((r, i) => (
                   <button
                     key={r}
+                    aria-pressed={i === radiusIdx}
                     className={i === radiusIdx ? 'zr-pace-btn zr-pace-btn-on' : 'zr-pace-btn'}
                     onClick={() => setRadiusIdx(i)}
                   >
@@ -481,13 +485,16 @@ function GameApp() {
 
           {geoError && <p className="zr-error">{geoError}</p>}
           <button className="zr-btn zr-btn-primary" onClick={requestLocationAndStart} disabled={starting}>
-            {starting ? '위치 확인 중…' : isLocalTestMode() ? '테스트 위치로 시작 🧪' : '도망치기 시작 🏃'}
+            <GameIcon name="run" size={21} />
+            <span>{starting ? '위치 확인 중…' : isLocalTestMode() ? '테스트 위치로 시작' : '생존 러닝 시작'}</span>
           </button>
           <button className="zr-btn zr-btn-ghost" disabled={starting} onClick={() => setMode('room')}>
-            👥 그룹으로 같이 뛰기
+            <GameIcon name="users" size={20} />
+            <span>그룹 러닝</span>
           </button>
           <button className="zr-admin-link" disabled={starting} onClick={() => setMode('admin')}>
-            🛠️ 내 좀비 경로 만들기 (로그인 필요)
+            <GameIcon name="route" size={18} />
+            <span>좀비 경로 만들기</span>
           </button>
           <p className="zr-location-note">위치 권한 필요 · 야외에서 시작해주세요</p>
           {isLocalTestMode() && <p className="zr-test-note">로컬 테스트 모드 · 가상 위치로 진행 중</p>}
@@ -499,13 +506,14 @@ function GameApp() {
   if (game.status === 'gameover') {
     const reasonText =
       game.gameOverReason === 'caught'
-        ? '좀비 무리에게 붙잡혔어요 💀'
+        ? '좀비에게 붙잡혔습니다'
         : game.gameOverReason === 'outside_area'
-          ? '제한구역을 너무 오래 벗어나 있었어요 🗺️'
-          : '무사히 도망치는 데 성공했어요 🎉'
+          ? '생존 구역을 이탈했습니다'
+          : '러닝을 완료했습니다'
     return (
       <div className="zr-screen zr-start">
         <div className="zr-start-card">
+          <p className="zr-eyebrow">RUN REPORT / COMPLETE</p>
           <h1 className="zr-title">{reasonText}</h1>
           {geoError && <p role="alert" className="zr-error">{geoError}</p>}
           <div className="zr-result-grid">
@@ -549,29 +557,16 @@ function GameApp() {
     game.playerPos &&
     haversineDistance(game.areaCenter.lat, game.areaCenter.lon, game.playerPos.lat, game.playerPos.lon) >
       game.areaRadius
+  const threatBand = nearestZombieDist == null ? 'clear' : nearestZombieDist <= 25 ? 'critical' : nearestZombieDist <= 70 ? 'near' : 'tracked'
+  const threatLabel = nearestZombieDist == null ? '탐색 중' : threatBand === 'critical' ? '즉시 도주' : threatBand === 'near' ? '접근 중' : '추적 감지'
+  const frozenRemaining = frozenActive ? Math.max(0, Math.ceil((game.frozenUntil - Date.now()) / 1000)) : 0
+  const paceStatus = livePaceMps == null ? '페이스 측정 중' : behindPace ? '속도를 올리세요' : '현재 페이스 유지'
+  const runLabel = game.presetMap?.name || (game.playMode === 'restricted' ? 'BOUNDARY RUN' : 'FREE RUN')
+  const gpsPaused = Boolean(geoError)
+  const currentWave = Math.max(1, game.waveCount)
 
   return (
-    <div className="zr-screen">
-      <div className="zr-hud-top">
-        <div className="zr-hud-stat">
-          <div className="zr-hud-value">{formatTime(game.elapsedSec)}</div>
-          <div className="zr-hud-label">시간</div>
-        </div>
-        <div className="zr-hud-stat">
-          <div className="zr-hud-value">{formatDistance(game.distance)}</div>
-          <div className="zr-hud-label">거리</div>
-        </div>
-        <div className="zr-hud-stat">
-          <div className="zr-hud-value">{nearestZombieDist == null ? '-' : formatDistance(nearestZombieDist)}</div>
-          <div className="zr-hud-label">가까운 좀비</div>
-        </div>
-      </div>
-
-      <div className={behindPace ? 'zr-pace-bar zr-pace-bar-behind' : 'zr-pace-bar'}>
-        🏃 {livePaceMps == null ? '측정 중…' : `${formatPace(livePaceMps)}/km`}
-        <span className="zr-pace-vs">vs</span>🧟 {formatPace(game.targetPaceMps)}/km
-      </div>
-
+    <div className={`zr-screen zr-game-shell zr-threat-${threatBand}${outsideArea ? ' zr-outside-area' : ''}`}>
       <GameMap
         playerPos={game.playerPos}
         zombies={game.zombies}
@@ -579,19 +574,66 @@ function GameApp() {
         follow={follow}
         areaCenter={game.areaCenter}
         areaRadius={game.areaRadius}
+        headingDeg={gpsPaused ? null : game.headingDeg}
+        trailDistance={game.distance}
+        trackingPaused={gpsPaused}
+        patrolRoutes={game.presetMap?.routes}
       />
 
-      <div className="zr-hud-side">
-        <div className="zr-hearts">
-          {Array.from({ length: START_HEALTH }).map((_, i) => (
-            <span key={i} className={i < game.health ? 'zr-heart zr-heart-on' : 'zr-heart'}>
-              ❤️
-            </span>
-          ))}
+      <header className="zr-game-header">
+        <div className="zr-game-statusline">
+          <span className={gpsPaused ? 'zr-live-state zr-live-paused' : 'zr-live-state'}><i /> {gpsPaused ? 'RUN PAUSED' : 'LIVE RUN'}</span>
+          <span><GameIcon name="signal" size={14} /> {gpsPaused ? 'GPS PAUSED' : 'GPS LINK'}</span>
+          <span>{game.presetMap ? 'ROUTE RUN' : `WAVE ${String(currentWave).padStart(2, '0')}`}</span>
         </div>
+        <div className="zr-hud-top" aria-label="러닝 현황">
+        <div className="zr-hud-stat" aria-label={`경과 시간 ${formatTime(game.elapsedSec)}`}>
+          <div className="zr-hud-value">{formatTime(game.elapsedSec)}</div>
+          <div className="zr-hud-label">시간</div>
+        </div>
+        <div className="zr-hud-stat" aria-label={`달린 거리 ${formatDistance(game.distance)}`}>
+          <div className="zr-hud-value">{formatDistance(game.distance)}</div>
+          <div className="zr-hud-label">거리</div>
+        </div>
+        <div className="zr-hud-stat zr-hud-threat" aria-label={`가장 가까운 좀비 ${nearestZombieDist == null ? '탐색 중' : formatDistance(nearestZombieDist)}`}>
+          <div className="zr-hud-value">{nearestZombieDist == null ? '—' : formatDistance(nearestZombieDist)}</div>
+          <div className="zr-hud-label">위협 거리</div>
+        </div>
+      </div>
+
+      <div className={behindPace ? 'zr-pace-bar zr-pace-bar-behind' : 'zr-pace-bar'}>
+        <span className="zr-pace-side"><GameIcon name="run" size={17} /><span><small>내 페이스</small><strong>{livePaceMps == null ? '측정 중' : `${formatPace(livePaceMps)}/km`}</strong></span></span>
+        <span className="zr-pace-vs">VS</span>
+        <span className="zr-pace-side zr-pace-enemy"><GameIcon name="zombie" size={17} /><span><small>좀비 기준</small><strong>{formatPace(game.targetPaceMps)}/km</strong></span></span>
+      </div>
+      </header>
+
+      <div className="zr-hud-side">
+        <div className="zr-enemy-counter" aria-label={`활성 좀비 ${game.zombies.length}마리`}>
+          <GameIcon name="zombie" size={18} />
+          <strong>{game.zombies.length}</strong>
+          <small>ACTIVE</small>
+        </div>
+        <div
+          className={game.health <= 2 ? 'zr-hearts zr-vital-low' : 'zr-hearts'}
+          role="meter"
+          aria-label={`생명 ${game.health}/${START_HEALTH}`}
+          aria-valuemin="0"
+          aria-valuemax={START_HEALTH}
+          aria-valuenow={game.health}
+        >
+          <span className="zr-vital-label">VITAL</span>
+          <div className="zr-vital-segments" aria-hidden="true">
+          {Array.from({ length: START_HEALTH }).map((_, i) => (
+              <i key={i} className={i < game.health ? 'zr-heart zr-heart-on' : 'zr-heart'} />
+          ))}
+          </div>
+          <strong className="zr-vital-value">{game.health}<small>/{START_HEALTH}</small></strong>
+        </div>
+        {frozenActive && <div className="zr-freeze-counter"><GameIcon name="freeze" size={18} /><strong>{frozenRemaining}s</strong><small>FREEZE</small></div>}
         {game.roomId && (
-          <button className="zr-badge" onClick={() => setShowTeammates((v) => !v)}>
-            👥 {teammates.length}
+          <button className="zr-badge" aria-label={`동료 ${teammates.length}명`} aria-expanded={showTeammates} onClick={() => setShowTeammates((v) => !v)}>
+            <GameIcon name="users" size={18} /> <span>{teammates.length}</span>
           </button>
         )}
       </div>
@@ -600,8 +642,8 @@ function GameApp() {
         <div className="zr-teammates-panel">
           <div className="zr-teammates-header">
             <span>동료 ({teammates.length}명)</span>
-            <button className="zr-round-btn" onClick={() => setShowTeammates(false)}>
-              ✕
+            <button className="zr-round-btn" aria-label="동료 목록 닫기" onClick={() => setShowTeammates(false)}>
+              <GameIcon name="close" size={18} />
             </button>
           </div>
           {teammates.map((p) => (
@@ -611,9 +653,9 @@ function GameApp() {
                 {p.id === game.roomPlayerId ? ' (나)' : ''}
               </span>
               <span className="zr-teammate-stats">
-                {(p.distance_m / 1000).toFixed(2)}km · {p.health != null ? '❤️'.repeat(Math.min(START_HEALTH, Math.max(0, Number(p.health) || 0))) : ''}
-                {p.status === 'caught' && ' 💀'}
-                {p.status === 'finished' && ' 🏁'}
+                {(p.distance_m / 1000).toFixed(2)}km · {p.health != null ? `생명 ${Math.min(START_HEALTH, Math.max(0, Number(p.health) || 0))}` : '생명 확인 중'}
+                {p.status === 'caught' && ' · 탈락'}
+                {p.status === 'finished' && ' · 완주'}
               </span>
             </div>
           ))}
@@ -621,19 +663,25 @@ function GameApp() {
       )}
 
       <div className="zr-banner-stack">
-        {Date.now() < game.invulnerableUntil && <div className="zr-banner zr-banner-blue">잠시 보호 중이에요. 좀비에게서 떨어져주세요.</div>}
-        {frozenActive && <div className="zr-banner zr-banner-blue">⏳ 좀비 이동 정지 중</div>}
-        {outsideArea && <div className="zr-banner zr-banner-red">⚠️ 제한구역을 벗어났어요</div>}
-        {geoError && <div className="zr-banner zr-banner-red">{geoError}</div>}
+        {Date.now() < game.invulnerableUntil && <div role="status" className="zr-banner zr-banner-blue"><GameIcon name="shield" size={17} /> 보호 시간 · 거리를 벌리세요</div>}
+        {frozenActive && <div className="zr-banner zr-banner-blue"><GameIcon name="freeze" size={17} /> 좀비 이동 정지 · {frozenRemaining}초</div>}
+        {outsideArea && <div role="alert" className="zr-banner zr-banner-red"><GameIcon name="warning" size={17} /> 생존 구역을 벗어났습니다</div>}
+        {geoError && <div role="alert" className="zr-banner zr-banner-red"><GameIcon name="warning" size={17} /> {geoError}</div>}
       </div>
-      {toastMsg && <div className="zr-toast">{toastMsg}</div>}
+      {toastMsg && <div className="zr-toast" role="status" aria-live="polite">{toastMsg}</div>}
 
       <div className="zr-hud-bottom">
-        <button className="zr-round-btn" aria-label={follow ? "지도 자유 이동" : "내 위치 따라가기"} onClick={() => setFollow((f) => !f)}>
-          {follow ? '📍' : '🗺️'}
+        <button className="zr-map-control" aria-label="내 위치 자동 추적" aria-pressed={follow} onClick={() => setFollow((f) => !f)}>
+          <GameIcon name={follow ? 'locate' : 'map'} size={21} />
+          <span>{follow ? '추적 중' : '지도 보기'}</span>
         </button>
-        <button className="zr-btn zr-btn-ghost zr-btn-small" onClick={finishRun}>
-          종료
+        <div className="zr-run-state" role="status">
+          <small>{runLabel}</small>
+          <strong>{gpsPaused ? 'GPS 신호 대기' : frozenActive ? '좀비 정지 · 경로 확보' : threatBand === 'critical' ? threatLabel : paceStatus}</strong>
+        </div>
+        <button className="zr-exit-control" aria-label="러닝 종료" onClick={finishRun}>
+          <GameIcon name="stop" size={18} />
+          <span>종료</span>
         </button>
       </div>
     </div>

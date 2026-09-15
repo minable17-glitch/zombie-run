@@ -213,7 +213,7 @@ function spawnWave(game, now, emit) {
       })
     }
     game.zombies = [...game.zombies, ...spawned]
-    emit(`좀비 무리 등장! (${count}마리) 🧟`)
+    emit(`좀비 무리 등장 · ${count}개체`)
 }
 
 function spawnPickup(game, now) {
@@ -283,7 +283,7 @@ export function advanceGame(game, dt, now) {
         game.zombies = survivors
         game.health -= 1
         game.invulnerableUntil = now + HIT_GRACE_MS
-        emit('좀비에게 붙잡혔어요! 💔')
+        emit('좀비 접촉 · 생명 감소')
         if (game.health <= 0) {
           return { messages, endReason: 'caught' }
         }
@@ -296,7 +296,7 @@ export function advanceGame(game, dt, now) {
         const d = haversineDistance(game.playerPos.lat, game.playerPos.lon, p.lat, p.lon)
         if (d < PICKUP_RADIUS_M) {
           game.frozenUntil = now + 10000
-          emit('모래시계 발동! 좀비가 10초간 멈춰요 ⏳')
+          emit('모래시계 발동 · 10초간 좀비 정지')
         } else {
           remaining.push(p)
         }
@@ -355,7 +355,10 @@ export function updatePosition(game, fix, now) {
     game.playerPos = fix
     game.paceSamples = [...game.paceSamples, { t: now, d: game.distance }]
       .filter(sample => now - sample.t <= LIVE_PACE_WINDOW_MS)
-    if (!game.headingAnchor || gap) game.headingAnchor = fix
+    if (!game.headingAnchor || gap) {
+      game.headingAnchor = fix
+      game.headingDeg = null
+    }
     else if (haversineDistance(game.headingAnchor.lat, game.headingAnchor.lon, fix.lat, fix.lon) >= HEADING_MIN_STEP_M) {
       game.headingDeg = bearingTo(game.headingAnchor.lat, game.headingAnchor.lon, fix.lat, fix.lon)
       game.headingAnchor = fix

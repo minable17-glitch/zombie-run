@@ -1,5 +1,5 @@
 import { test, expect } from 'vitest'
-import { advanceGame, applyStartSetup, makeInitialGame } from '../src/lib/gameEngine.js'
+import { advanceGame, applyStartSetup, makeInitialGame, updatePosition } from '../src/lib/gameEngine.js'
 
 function playing() {
   return { ...makeInitialGame(), status: 'playing', playerPos: { lat: 37, lon: 127 } }
@@ -52,4 +52,24 @@ test('a selected map keeps zombies on the authored route instead of chasing the 
   advanceGame(game, 1, 1000)
   expect(game.zombies[0].state).toBe('patrol')
   expect(game.zombies[0].lat).not.toBe(before.lat)
+})
+
+test('collecting an hourglass removes it and freezes zombies for ten seconds', () => {
+  const game = playing()
+  game.nextWaveSec = Infinity
+  game.pickups = [{ id: 'hourglass', type: 'hourglass', lat: 37, lon: 127 }]
+  const { messages } = advanceGame(game, 1, 1000)
+  expect(game.pickups).toHaveLength(0)
+  expect(game.frozenUntil).toBe(11000)
+  expect(messages.some((message) => message.includes('모래시계'))).toBe(true)
+})
+
+test('a GPS reconnect clears an old bearing until new movement establishes direction', () => {
+  const game = playing()
+  game.headingDeg = 270
+  game.headingAnchor = { lat: 37, lon: 127, t: 0, accuracy: 5 }
+  game.lastFix = null
+  updatePosition(game, { lat: 37.001, lon: 127, t: 20000, accuracy: 5 }, 20000)
+  expect(game.headingDeg).toBeNull()
+  expect(game.distance).toBe(0)
 })
