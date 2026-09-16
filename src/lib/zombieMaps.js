@@ -28,6 +28,7 @@ export function rowToZombieMap(row) {
     center: { lat: row.center_lat, lon: row.center_lon },
     radius: row.radius_m,
     routes: row.routes,
+    boundary: row.boundary ?? null,
   }
 }
 

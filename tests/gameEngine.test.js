@@ -1,10 +1,28 @@
 import { test, expect } from 'vitest'
 import { advanceGame, applyStartSetup, makeInitialGame, updatePosition } from '../src/lib/gameEngine.js'
 import { haversineDistance } from '../src/lib/geo.js'
+import { insidePolygon } from '../src/lib/playArea.js'
 
 function playing() {
   return { ...makeInitialGame(), status: 'playing', playerPos: { lat: 37, lon: 127 } }
 }
+
+test('polygon runs enforce their boundary and keep pickups inside the authored area', () => {
+  const game=playing()
+  const boundary=[{lat:37,lon:127},{lat:37.002,lon:127},{lat:37,lon:127.002}]
+  const route=[{lat:37.0001,lon:127.0001},{lat:37.0002,lon:127.0001}]
+  const map={id:'triangle',center:{lat:37.001,lon:127.001},radius:400,boundary,routes:[route]}
+  applyStartSetup(game,route[0],{paceMps:2,forcedMap:map})
+  game.playerPos={lat:37.0018,lon:127.0018}
+  game.outsideAreaMs=3599000
+  game.elapsedSec=69
+  advanceGame(game,1,70000)
+  expect(game.health).toBe(5)
+  expect(game.pickups).toHaveLength(1)
+  expect(insidePolygon(game.pickups[0],boundary)).toBe(true)
+  applyStartSetup(game,route[0],{paceMps:2,playMode:'free',radiusM:400})
+  expect(game.areaBoundary).toBeNull()
+})
 
 test('frozen zombies cannot move or damage the player until the freeze ends', () => {
   const game = playing()

@@ -1,4 +1,5 @@
 import { haversineDistance } from './geo.js'
+import { polygonError } from './playArea.js'
 
 export const HIT_GRACE_MS = 5000
 export const GPS_STALE_MS = 15000
@@ -22,7 +23,7 @@ export function measureMovement(previous, next) {
 }
 
 export function validZombieMap(row) {
-  return Number.isFinite(row.center_lat) && Math.abs(row.center_lat) <= 90 &&
+  return (row.boundary == null || !polygonError(row.boundary)) && Number.isFinite(row.center_lat) && Math.abs(row.center_lat) <= 90 &&
     Number.isFinite(row.center_lon) && Math.abs(row.center_lon) <= 180 &&
     Number.isFinite(row.radius_m) && row.radius_m >= 50 && row.radius_m <= 5000 &&
     Array.isArray(row.routes) && row.routes.length <= 50 && row.routes.every(route =>

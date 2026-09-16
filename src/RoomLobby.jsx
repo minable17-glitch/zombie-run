@@ -236,7 +236,7 @@ export default function RoomLobby({ zombieMaps = [], onBack, onStart, startError
           </div>
           {mapId ? (
             <p className="zr-pace-hint">
-              선택하면 참가자 전원이 그 위치(반경 {zombieMaps.find((m) => m.id === mapId)?.radius}m 안)로 이동해야
+              선택하면 참가자 전원이 지도에 표시된 플레이 구역 안으로 이동해야
               이 경로의 좀비를 만나요. 다같이 그 장소로 모여주세요!
             </p>
           ) : (

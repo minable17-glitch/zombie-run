@@ -14,6 +14,7 @@ import { accountLanding, passwordRecoveryExpired } from './lib/authLanding.js'
 import { readRoom, updateRoomStat } from './lib/roomApi.js'
 import { readFix, GPS_STALE_MS } from './lib/gameSafety.js'
 import { isLocalTestMode, makeTestPosition } from './lib/testMode.js'
+import { insideArea } from './lib/playArea.js'
 import {
   makeInitialGame, applyStartSetup, advanceGame, updatePosition, findRouteCandidate,
   closestRouteIndex, formatTime, formatPace, START_HEALTH,
@@ -263,9 +264,9 @@ function GameApp() {
         const forcedMap = config.mapId ? zombieMaps.find(m => m.id === config.mapId) : null
         if (config.mapId && !forcedMap) return fail('선택한 지도가 없어요. 방에서 지도를 다시 선택해주세요.')
         const startPos = isLocalTestMode() && forcedMap
-          ? { ...gpsStartPos, lat: forcedMap.center.lat, lon: forcedMap.center.lon }
+          ? { ...gpsStartPos, ...(forcedMap.boundary ? forcedMap.routes[0][0] : forcedMap.center) }
           : gpsStartPos
-        if (!isLocalTestMode() && forcedMap && haversineDistance(startPos.lat, startPos.lon, forcedMap.center.lat, forcedMap.center.lon) > forcedMap.radius)
+        if (!isLocalTestMode() && forcedMap && !insideArea(startPos, forcedMap.center, forcedMap.radius, forcedMap.boundary))
           return fail('방장이 선택한 지도 구역 안으로 이동한 뒤 다시 시도해주세요.')
         clearInterval(tickIntervalRef.current)
         clearInterval(teammatesPollRef.current)
@@ -555,8 +556,7 @@ function GameApp() {
     game.playMode === 'restricted' &&
     game.areaCenter &&
     game.playerPos &&
-    haversineDistance(game.areaCenter.lat, game.areaCenter.lon, game.playerPos.lat, game.playerPos.lon) >
-      game.areaRadius
+    !insideArea(game.playerPos, game.areaCenter, game.areaRadius, game.areaBoundary)
   const threatBand = nearestZombieDist == null ? 'clear' : nearestZombieDist <= 25 ? 'critical' : nearestZombieDist <= 70 ? 'near' : 'tracked'
   const threatLabel = nearestZombieDist == null ? '탐색 중' : threatBand === 'critical' ? '즉시 도주' : threatBand === 'near' ? '접근 중' : '추적 감지'
   const frozenRemaining = frozenActive ? Math.max(0, Math.ceil((game.frozenUntil - Date.now()) / 1000)) : 0
@@ -574,6 +574,7 @@ function GameApp() {
         follow={follow}
         areaCenter={game.areaCenter}
         areaRadius={game.areaRadius}
+        areaBoundary={game.areaBoundary}
         headingDeg={gpsPaused ? null : game.headingDeg}
         trailDistance={game.distance}
         trackingPaused={gpsPaused}

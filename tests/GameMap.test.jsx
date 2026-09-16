@@ -65,6 +65,7 @@ vi.mock('leaflet', () => {
     marker: vi.fn((point, options) => makeLayer('marker', point, options)),
     polyline: vi.fn((points, options) => makeLayer('polyline', points, options)),
     circle: vi.fn((point, options) => makeLayer('circle', point, options)),
+    polygon: vi.fn((points, options) => makeLayer('polygon', points, options)),
     latLng: vi.fn((lat, lng) => ({
       lat,
       lng,

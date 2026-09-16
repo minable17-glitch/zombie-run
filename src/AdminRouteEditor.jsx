@@ -5,6 +5,7 @@ import { clampToRadius, formatDistance, haversineDistance, pathLength } from './
 import { mapNameError, normalizeMapName, rowToZombieMap } from './lib/zombieMaps.js'
 import { useBackableStep } from './lib/useBackableStep.js'
 import { isLocalTestMode, TEST_CENTER } from './lib/testMode.js'
+import { validPoint, polygonError, polygonBounds, insidePolygon, segmentInside } from './lib/playArea.js'
 
 const DEFAULT_RADIUS_M = 400
 
@@ -20,6 +21,9 @@ export default function AdminRouteEditor({ onBack, onSaved, onLogout, session })
   const [mapName, setMapName] = useState('')
   const [radius, setRadius] = useState(DEFAULT_RADIUS_M)
   const [areaPickMode, setAreaPickMode] = useState('center')
+  const [areaShape, setAreaShape] = useState('polygon')
+  const [boundary, setBoundary] = useState([])
+  const [drawMode, setDrawMode] = useState('points')
   const [routes, setRoutes] = useState([])
   const [currentRoute, setCurrentRoute] = useState([])
   const [editingMapId, setEditingMapId] = useState(null)
@@ -69,21 +73,33 @@ export default function AdminRouteEditor({ onBack, onSaved, onLogout, session })
 
   const handleMapClick = useCallback(
     (point) => {
-      if (!center) return
+      if (!center || !validPoint(point)) return
       if (step === 'area') {
+        if (areaShape === 'polygon') {
+          if (drawMode === 'points') setBoundary(prev => prev.length < 200 ? [...prev, point] : prev)
+          setSaveError('')
+          return
+        }
         if (areaPickMode === 'center') {
           setCenter(point)
           setAreaPickMode('radius')
         } else {
-          setRadius(Math.round(Math.min(1500, Math.max(100, haversineDistance(center.lat, center.lon, point)))))
+          const distance = haversineDistance(center.lat, center.lon, point.lat, point.lon)
+          if (Number.isFinite(distance)) setRadius(Math.round(Math.min(1500, Math.max(100, distance))))
         }
         setSaveError('')
         return
       }
-      const clamped = clampToRadius(point, center, radius)
+      if (areaShape === 'polygon' && (!insidePolygon(point, boundary) ||
+        (currentRoute.length && !segmentInside(currentRoute.at(-1), point, boundary)))) {
+        setSaveError('경로가 구역 밖으로 나가요. 테두리 안쪽을 따라 점을 찍어주세요.')
+        return
+      }
+      const clamped = areaShape === 'polygon' ? point : clampToRadius(point, center, radius)
+      setSaveError('')
       setCurrentRoute((prev) => [...prev, clamped])
     },
-    [step, center, radius, areaPickMode]
+    [step, center, radius, areaPickMode, areaShape, boundary, drawMode, currentRoute]
   )
 
   const undoPoint = () => setCurrentRoute((prev) => prev.slice(0, -1))
@@ -107,6 +123,9 @@ export default function AdminRouteEditor({ onBack, onSaved, onLogout, session })
     setMapName('')
     setRadius(DEFAULT_RADIUS_M)
     setAreaPickMode('center')
+    setAreaShape('polygon')
+    setBoundary([])
+    setDrawMode('points')
     setRoutes([])
     setCurrentRoute([])
     setStep('area')
@@ -118,6 +137,9 @@ export default function AdminRouteEditor({ onBack, onSaved, onLogout, session })
     setCenter(map.center)
     setRadius(map.radius)
     setAreaPickMode('radius')
+    setAreaShape(map.boundary ? 'polygon' : 'circle')
+    setBoundary(map.boundary || [])
+    setDrawMode('points')
     setRoutes(map.routes)
     setCurrentRoute([])
     setStep('routes')
@@ -151,12 +173,17 @@ export default function AdminRouteEditor({ onBack, onSaved, onLogout, session })
   }
 
   const confirmArea = () => {
-    const error = mapNameError(mapName, savedMaps, editingMapId)
+    const error = mapNameError(mapName, savedMaps, editingMapId) || (areaShape === 'polygon' && polygonError(boundary))
     if (error) {
       setSaveError(error)
       return
     }
     setMapName(normalizeMapName(mapName))
+    if (areaShape === 'polygon') {
+      const bounds = polygonBounds(boundary)
+      setCenter(bounds.center)
+      setRadius(bounds.radius)
+    }
     setSaveError('')
     setStep('routes')
   }
@@ -174,6 +201,14 @@ export default function AdminRouteEditor({ onBack, onSaved, onLogout, session })
       setSaveError(nameError)
       return
     }
+    if (areaShape === 'polygon') {
+      const error = polygonError(boundary)
+      if (error) { setSaveError(error); return }
+      if (allRoutes.some(route => route.some((p, i) => !insidePolygon(p, boundary) || (i > 0 && !segmentInside(route[i - 1], p, boundary))))) {
+        setSaveError('변경한 구역 밖에 기존 경로가 있어요. 해당 경로를 지우고 다시 그려주세요.')
+        return
+      }
+    }
     // 새 지도는 경로가 하나는 있어야 저장 의미가 있지만, 기존 지도를 수정하는 중이면
     // 경로를 전부 지우고(초기화) 빈 채로 저장(= 이 위치의 좀비를 없앰)하는 것도 허용함
     if ((allRoutes.length === 0 && !editingMapId) || !center) return
@@ -185,6 +220,7 @@ export default function AdminRouteEditor({ onBack, onSaved, onLogout, session })
       center_lon: center.lon,
       radius_m: radius,
       routes: allRoutes,
+      boundary: areaShape === 'polygon' ? boundary : null,
       ...(userId ? { owner_id: userId } : {}),
     }
     let error = null
@@ -214,7 +250,7 @@ export default function AdminRouteEditor({ onBack, onSaved, onLogout, session })
         <div>
           <div className="zr-hud-label">내 좀비 경로 만들기{session?.user?.user_metadata?.username ? ' · ' + session.user.user_metadata.username : ''}</div>
           <div className="zr-hud-value" style={{ fontSize: 13 }}>
-            {step === 'area' ? '구역(중심·반경)을 먼저 정해주세요' : '지도를 탭해서 경로를 그려주세요'}
+            {step === 'area' ? '플레이 구역의 테두리를 그려주세요' : '지도를 탭해서 경로를 그려주세요'}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -250,7 +286,9 @@ export default function AdminRouteEditor({ onBack, onSaved, onLogout, session })
 
       {center && (
         <>
-          <AdminMap center={center} radius={radius} routes={routes} currentRoute={currentRoute} onMapClick={handleMapClick} />
+          <AdminMap center={center} radius={radius} routes={routes} currentRoute={currentRoute} onMapClick={handleMapClick}
+            boundary={areaShape === 'polygon' ? boundary : null} editingArea={step === 'area'} drawMode={drawMode}
+            onBoundaryChange={points => { setBoundary(points); setSaveError('') }} />
 
           <div className="zr-admin-panel">
             {step === 'area' ? (
@@ -262,6 +300,22 @@ export default function AdminRouteEditor({ onBack, onSaved, onLogout, session })
                   onChange={(e) => { setMapName(e.target.value); setSaveError('') }}
                 />
                 {saveError && <p role="alert" className="zr-error">{saveError}</p>}
+                <div className="zr-area-tools" role="group" aria-label="구역 모양">
+                  <button className="zr-btn zr-btn-ghost" aria-pressed={areaShape === 'polygon'} onClick={() => { setAreaShape('polygon'); setSaveError('') }}>자유 구역</button>
+                  <button className="zr-btn zr-btn-ghost" aria-pressed={areaShape === 'circle'} onClick={() => { setAreaShape('circle'); setAreaPickMode('center'); setSaveError('') }}>원형 구역</button>
+                </div>
+                {areaShape === 'polygon' ? <>
+                  <div className="zr-area-tools" role="group" aria-label="구역 그리기 도구">
+                    {[['points', '점 찍기'], ['draw', '드래그 그리기'], ['move', '지도 이동']].map(([value, label]) =>
+                      <button key={value} className="zr-btn zr-btn-ghost" aria-pressed={drawMode === value} onClick={() => setDrawMode(value)}>{label}</button>)}
+                  </div>
+                  <p className="zr-pace-hint">{drawMode === 'draw' ? '지도를 누른 채 테두리를 그리세요. 손을 놓으면 닫힙니다. 다시 그리면 현재 구역을 교체합니다.' : drawMode === 'move' ? '지도를 드래그해 이동하세요. 그리려면 점 찍기나 드래그 그리기를 선택하세요.' : '테두리를 따라 순서대로 점을 찍으세요. 3점부터 구역이 닫힙니다. 번호가 있는 점은 끌어서 옮길 수 있어요.'}</p>
+                  <div className="zr-area-tools">
+                    <span aria-live="polite">테두리 {boundary.length}/200점</span>
+                    <button className="zr-btn zr-btn-ghost" disabled={!boundary.length} onClick={() => { setBoundary(prev => prev.slice(0, -1)); setSaveError('') }}>구역 점 취소</button>
+                    <button className="zr-btn zr-btn-ghost" disabled={!boundary.length} onClick={() => { setBoundary([]); setSaveError('') }}>구역 초기화</button>
+                  </div>
+                </> : <>
                 <div className="zr-admin-row">
                   <span className="zr-pace-label" style={{ margin: 0 }}>
                     플레이 반경 {radius}m
@@ -273,7 +327,7 @@ export default function AdminRouteEditor({ onBack, onSaved, onLogout, session })
                     ? '1단계 · 지도의 원하는 중심을 눌러주세요. 현재 위치를 기준으로 시작하려면 빨간 중심을 그대로 두고 한 번 눌러주세요.'
                     : '2단계 · 중심에서 원하는 가장자리를 한 번 더 눌러 반경을 정하세요. 빨간 원이 실제 플레이 구역입니다.'}
                 </p>
-                {saveError && <p role="alert" className="zr-error">{saveError}</p>}
+                </>}
                 <button className="zr-btn zr-btn-primary" onClick={confirmArea}>
                   구역 확정하고 경로 그리기 →
                 </button>
@@ -353,7 +407,7 @@ export default function AdminRouteEditor({ onBack, onSaved, onLogout, session })
                 )}
                 <p className="zr-pace-hint" style={{ margin: '4px 0' }}>
                   완성된 경로 {routes.length}개{totalRoutes !== routes.length ? ' (+ 지금 그리는 중 1개)' : ''} — 경로마다 좀비
-                  1마리가 그 위를 왔다갔다 순찰해요. 구역 밖을 탭해도 자동으로 구역 안쪽으로 당겨져요.
+                  1마리가 그 위를 왔다갔다 순찰해요. 구역 테두리 안쪽을 따라 경로를 그려주세요.
                 </p>
                 {saveError && <p role="alert" className="zr-error">{saveError}</p>}
                 <button
@@ -372,7 +426,7 @@ export default function AdminRouteEditor({ onBack, onSaved, onLogout, session })
                         : '이 지도 저장하기'}
                 </button>
                 <p className="zr-pace-hint">
-                  저장하면 이 위치 반경 {radius}m 안에서 게임을 시작할 때 바로 이 경로가 적용돼요.
+                  저장 후 그룹 방에서 이 지도를 선택하면 지정된 구역과 경로로 플레이해요.
                 </p>
               </>
             )}

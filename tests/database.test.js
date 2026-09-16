@@ -3,7 +3,7 @@ import { beforeAll, afterAll, test, expect } from 'vitest'
 import { PGlite } from '@electric-sql/pglite'
 import { readFileSync } from 'node:fs'
 
-const migration = ['20260909140000_zombie_run_security.sql', '20260910010000_room_expiration.sql', '20260911030000_legacy_profile_lookup.sql']
+const migration = ['20260909140000_zombie_run_security.sql', '20260910010000_room_expiration.sql', '20260911030000_legacy_profile_lookup.sql', '20260916010000_map_boundary.sql']
   .map(name => readFileSync('supabase/migrations/' + name, 'utf8').replace(/^\uFEFF/, '').trim()).join('\n\n')
 const ids = {
   host: '00000000-0000-4000-8000-000000000001',
@@ -154,4 +154,14 @@ test('known legacy trigger is replaced without breaking guest or unrelated app s
 test('confirmed email updates synchronize the owning profile', async () => {
   await db.query("update auth.users set email='Updated@example.test' where id=$1", [ids.account])
   expect((await asUser(ids.account, 'select email from profiles')).rows[0].email).toBe('updated@example.test')
+})
+
+test('map boundaries persist under owner permissions and malformed boundaries are rejected', async () => {
+  const boundary = [{lat:37,lon:127},{lat:37.001,lon:127},{lat:37,lon:127.001}]
+  const inserted = await asUser(ids.account,
+    'insert into zombie_maps(name,center_lat,center_lon,radius_m,routes,owner_id,boundary) values($1,37,127,400,$2,$3,$4) returning id,boundary',
+    ['Polygon', [[boundary[0],boundary[1]]], ids.account, boundary])
+  expect(inserted.rows[0].boundary).toEqual(boundary)
+  await expect(asUser(ids.account, 'update zombie_maps set boundary=$1 where id=$2', [[{lat:37,lon:127}], inserted.rows[0].id])).rejects.toThrow()
+  expect((await asUser(ids.stranger,'update zombie_maps set boundary=null where id=$1 returning id',[inserted.rows[0].id])).rows).toHaveLength(0)
 })

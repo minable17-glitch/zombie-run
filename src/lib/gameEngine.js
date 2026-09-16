@@ -4,6 +4,7 @@ import {
 } from './geo.js'
 import { PACE_PRESETS, DEFAULT_PACE_IDX } from './gameConfig.js'
 import { measureMovement, GPS_STALE_MS, HIT_GRACE_MS } from './gameSafety.js'
+import { insideArea } from './playArea.js'
 
 // Mutable simulation state is owned by App; this module has no React or network effects.
 const REROUTE_INTERVAL_MS = 15000 // 좀비 하나당 최소 이 간격마다만 경로 재요청
@@ -78,6 +79,7 @@ export function makeInitialGame() {
     playMode: 'free', // 'free' | 'restricted'
     areaCenter: null, // 제한구역 모드일 때 시작 위치
     areaRadius: null, // 미터
+    areaBoundary: null,
     outsideAreaMs: 0, // 제한구역 밖에서 누적된 시간(ms)
     outsideAreaHeartsLost: 0, // 그동안 이미 깎은 생명 수 (중복 차감 방지용)
     headingDeg: null, // 지금 달리는 방향 (충분히 움직이기 전까진 null)
@@ -155,6 +157,7 @@ export function applyStartSetup(game, startPos, { paceMps, playMode, radiusM, fo
     game.playMode = 'restricted'
     game.areaCenter = matched.center
     game.areaRadius = matched.radius
+    game.areaBoundary = matched.boundary ?? null
     game.zombies = matched.routes.map((route, i) => {
       // 경로의 맨 처음 점이 아니라, 지금 내 위치에서 가장 가까운 지점부터 순찰을 시작하게 함
       const startIdx = closestRouteIndex(route, startPos)
@@ -180,6 +183,7 @@ export function applyStartSetup(game, startPos, { paceMps, playMode, radiusM, fo
     game.playMode = playMode
     game.areaCenter = playMode === 'restricted' ? startPos : null
     game.areaRadius = playMode === 'restricted' ? radiusM : null
+    game.areaBoundary = null
     game.zombies = []
   }
   return matched
@@ -215,6 +219,11 @@ function spawnPickup(game, now) {
   let p = pickSpawnPoint(game, 30, 90, { behind: false })
   if (game.playMode === 'restricted' && game.areaCenter)
     p = clampToRadius(p, game.areaCenter, game.areaRadius)
+  if (game.areaBoundary && !insideArea(p, game.areaCenter, game.areaRadius, game.areaBoundary)) {
+    // A concave area can exclude the bounding-circle center. Use an authored route point.
+    p = game.presetMap?.routes.flat().find(point => insideArea(point, game.areaCenter, game.areaRadius, game.areaBoundary))
+    if (!p) return
+  }
   game.pickups = [...game.pickups, { id: 'hourglass_' + now, type: 'hourglass', lat: p.lat, lon: p.lon }]
 }
 
@@ -299,13 +308,7 @@ export function advanceGame(game, dt, now) {
     }
 
     if (game.playMode === 'restricted' && game.areaCenter && game.playerPos) {
-      const distFromCenter = haversineDistance(
-        game.areaCenter.lat,
-        game.areaCenter.lon,
-        game.playerPos.lat,
-        game.playerPos.lon
-      )
-      if (distFromCenter > game.areaRadius) {
+      if (!insideArea(game.playerPos, game.areaCenter, game.areaRadius, game.areaBoundary)) {
         game.outsideAreaMs += dt * 1000
         const shouldHaveLost = Math.floor(game.outsideAreaMs / OUTSIDE_AREA_HEART_LOSS_MS)
         if (shouldHaveLost > game.outsideAreaHeartsLost) {
