@@ -3,6 +3,10 @@ import AuthScreen from './AuthScreen.jsx'
 import ResetPassword from './ResetPassword.jsx'
 import RunBriefing from './RunBriefing.jsx'
 import GameIcon from './GameIcon.jsx'
+import Leaderboard from './Leaderboard.jsx'
+import { rankPlayers } from './lib/leaderboard.js'
+import { createProximityAlert } from './lib/proximityAlert.js'
+import { createRoomReporter } from './lib/roomReporter.js'
 import { formatDistance, haversineDistance } from './lib/geo.js'
 import { fetchWalkingPath } from './lib/routing.js'
 import { supabase } from './lib/supabaseClient.js'
@@ -32,11 +36,6 @@ const loadGameMap = async () => {
 const AdminRouteEditor = lazy(() => import('./AdminRouteEditor.jsx'))
 const RoomLobby = lazy(() => import('./RoomLobby.jsx'))
 const loadingScreen = <div className="zr-screen zr-start"><p role="status">화면을 불러오는 중…</p></div>
-// 내 생존 상태를 방(그룹)에 올림. 실패해도 게임에는 영향 없음 (다음 주기에 다시 시도됨)
-function pushRoomStat(game, status) {
-  if (!supabase || !game.roomId || !game.roomPlayerId) return
-  updateRoomStat(game.roomId, game.distance, game.health, status).catch(() => {})
-}
 
 export default function App() {
   return <Suspense fallback={loadingScreen}><GameApp /></Suspense>
@@ -68,6 +67,20 @@ function GameApp() {
   const [teammates, setTeammates] = useState([])
   const [showTeammates, setShowTeammates] = useState(false)
   const teammatesPollRef = useRef(null)
+  const reporterRef = useRef(null)
+  const rankingPollRef = useRef(null)
+  const [rankingError, setRankingError] = useState('')
+  const [saveState, setSaveState] = useState('')
+  const [vibrationOn, setVibrationOn] = useState(true)
+  const vibrationEnabled = useRef(true)
+  const proximityRef = useRef(null)
+  if (!proximityRef.current) proximityRef.current = createProximityAlert(pattern => navigator.vibrate?.(pattern))
+  const toggleVibration = () => {
+    const next = !vibrationEnabled.current
+    vibrationEnabled.current = next
+    setVibrationOn(next)
+    if (!next) proximityRef.current.stop()
+  }
 
   const [adminSession, setAdminSession] = useState(null)
   const [adminSessionChecked, setAdminSessionChecked] = useState(false)
@@ -149,9 +162,11 @@ function GameApp() {
       watchIdRef.current = null
       game.gameOverReason = reason
       clearInterval(tickIntervalRef.current)
+      proximityRef.current.stop()
       if (game.roomId) {
-        pushRoomStat(game, reason === 'manual' ? 'finished' : 'caught')
-        clearInterval(teammatesPollRef.current)
+        setSaveState('saving')
+        reporterRef.current?.submit({ distance: game.distance, health: game.health,
+          elapsed: game.elapsedSec, status: reason === 'manual' ? 'finished' : 'caught' })
       }
       rerender()
     },
@@ -164,6 +179,7 @@ function GameApp() {
     const dt = Math.min(2, Math.max(0, (now - game.lastTickAt) / 1000))
     game.lastTickAt = now
     if (modeRef.current !== 'game' || document.hidden || !game.lastFix || now - game.lastFix.t > GPS_STALE_MS) {
+      proximityRef.current.stop()
       if (!document.hidden) setGeoError('GPS 신호를 기다리는 동안 게임이 잠시 멈춰요.')
       rerender()
       return
@@ -174,6 +190,9 @@ function GameApp() {
       endGame(result.endReason)
       return
     }
+    const nearest = game.playerPos && game.zombies.length
+      ? Math.min(...game.zombies.map(z => haversineDistance(game.playerPos.lat, game.playerPos.lon, z.lat, z.lon))) : Infinity
+    proximityRef.current.update(nearest, now, vibrationEnabled.current && now >= game.frozenUntil)
 
     const needsRoute = findRouteCandidate(game, now)
       if (needsRoute && ORS_API_KEY) {
@@ -199,7 +218,7 @@ function GameApp() {
 
     if (game.roomId && now - game.lastStatAt >= ROOM_STAT_PUSH_SEC * 1000) {
       game.lastStatAt = now
-      pushRoomStat(game, 'alive')
+      reporterRef.current?.submit({ distance: game.distance, health: game.health, elapsed: game.elapsedSec, status: 'alive' })
     }
 
     rerender()
@@ -225,16 +244,25 @@ function GameApp() {
       clearInterval(tickIntervalRef.current)
       clearTimeout(toastTimerRef.current)
       clearInterval(teammatesPollRef.current)
+      reporterRef.current?.dispose()
+      proximityRef.current.stop()
     }
   }, [])
 
   const pollTeammates = useCallback(async () => {
     if (!supabase || !game.roomId) return
     const runId = game.runId
+    if (rankingPollRef.current === runId) return
+    rankingPollRef.current = runId
+    reporterRef.current?.retry()
     try {
       const result = await readRoom(game.roomId)
-      if (game.runId === runId) setTeammates(result.players)
-    } catch { /* retry on the next interval */ }
+      if (game.runId === runId) { setTeammates(result.players); setRankingError('') }
+    } catch {
+      if (game.runId === runId) setRankingError('연결 지연 · 마지막으로 확인한 순위예요. 자동으로 다시 연결합니다.')
+    } finally {
+      if (rankingPollRef.current === runId) rankingPollRef.current = null
+    }
   }, [game])
 
   const startRun = useCallback((config, session) => {
@@ -270,6 +298,13 @@ function GameApp() {
           return fail('방장이 선택한 지도 구역 안으로 이동한 뒤 다시 시도해주세요.')
         clearInterval(tickIntervalRef.current)
         clearInterval(teammatesPollRef.current)
+        reporterRef.current?.dispose()
+        reporterRef.current = null
+        proximityRef.current.stop()
+        setTeammates([])
+        setShowTeammates(false)
+        setRankingError('')
+        setSaveState('')
         if (watchIdRef.current != null) navigator.geolocation.clearWatch(watchIdRef.current)
         Object.assign(game, makeInitialGame(), {
           status: 'playing', playerPos: startPos, lastPos: startPos, lastFix: startPos,
@@ -299,6 +334,12 @@ function GameApp() {
           tickIntervalRef.current = setInterval(tick, 1000)
         }
         if (session) {
+          const runId = game.runId
+          reporterRef.current = createRoomReporter(
+            s => updateRoomStat(session.roomId, s.distance, s.health, s.status, s.elapsed),
+            s => { if (game.runId === runId) { setSaveState(s.status === 'alive' ? '' : 'saved'); void pollTeammates() } },
+            () => { if (game.runId === runId) setSaveState('error') },
+          )
           pollTeammates()
           teammatesPollRef.current = setInterval(pollTeammates, ROOM_TEAMMATES_POLL_MS)
         }
@@ -326,6 +367,7 @@ function GameApp() {
 
   useEffect(() => {
     const visibilityChanged = () => {
+      proximityRef.current.stop()
       game.lastFix = null
       game.movementAnchor = null
       game.lastTickAt = Date.now()
@@ -350,6 +392,8 @@ function GameApp() {
   const restart = requestLocationAndStart
 
   const backToStart = useCallback(() => {
+    clearInterval(teammatesPollRef.current)
+    reporterRef.current?.dispose()
     const keepPos = game.playerPos
     Object.assign(game, makeInitialGame())
     game.playerPos = keepPos
@@ -491,8 +535,10 @@ function GameApp() {
           </button>
           <button className="zr-btn zr-btn-ghost" disabled={starting} onClick={() => setMode('room')}>
             <GameIcon name="users" size={20} />
-            <span>그룹 러닝</span>
+            <span>그룹 러닝 · 닉네임 / 코드</span>
           </button>
+          <p className="zr-mode-description">자유 모드도 닉네임과 방 코드로 함께 참가하고, 생존 랭킹을 겨뤄보세요.</p>
+          <p className="zr-location-note">{typeof navigator.vibrate === 'function' ? '좀비 70m 이내 접근 시 진동 · 게임 중 끄기 가능' : '이 브라우저는 진동을 지원하지 않아 화면으로 경고해요.'}</p>
           <button className="zr-admin-link" disabled={starting} onClick={() => setMode('admin')}>
             <GameIcon name="route" size={18} />
             <span>좀비 경로 만들기</span>
@@ -527,6 +573,11 @@ function GameApp() {
               <div className="zr-result-label">달린 거리</div>
             </div>
           </div>
+          {game.roomId && <>
+            <p role="status" className="zr-ranking-note">{saveState === 'saved' ? '내 최종 기록 저장 완료' : saveState === 'error' ? '기록 저장 재시도 중 · 이 화면을 유지해주세요.' : '내 최종 기록 저장 중…'}</p>
+            {saveState !== 'saved' && <p className="zr-ranking-note">저장되기 전에 나가면 최종 기록이 누락될 수 있어요.</p>}
+            <Leaderboard players={teammates} playerId={game.roomPlayerId} error={rankingError} />
+          </>}
           <button className="zr-btn zr-btn-primary" onClick={restart} disabled={starting}>
             {starting ? '위치 확인 중…' : game.roomId ? '혼자 다시 도전하기' : '다시 도전하기'}
           </button>
@@ -633,33 +684,22 @@ function GameApp() {
         </div>
         {frozenActive && <div className="zr-freeze-counter"><GameIcon name="freeze" size={18} /><strong>{frozenRemaining}s</strong><small>FREEZE</small></div>}
         {game.roomId && (
-          <button className="zr-badge" aria-label={`동료 ${teammates.length}명`} aria-expanded={showTeammates} onClick={() => setShowTeammates((v) => !v)}>
-            <GameIcon name="users" size={18} /> <span>{teammates.length}</span>
+          <button className="zr-badge" aria-label="내 순위와 생존 랭킹" aria-expanded={showTeammates} onClick={() => setShowTeammates((v) => !v)}>
+            <GameIcon name="users" size={18} /> <span>{rankPlayers(teammates).find(p => p.id === game.roomPlayerId)?.rank ?? '—'}위</span>
           </button>
         )}
+        {typeof navigator.vibrate === 'function' && <button className="zr-badge" aria-label="좀비 접근 진동" aria-pressed={vibrationOn} onClick={toggleVibration}>진동<br />{vibrationOn ? 'ON' : 'OFF'}</button>}
       </div>
 
       {game.roomId && showTeammates && (
         <div className="zr-teammates-panel">
           <div className="zr-teammates-header">
-            <span>동료 ({teammates.length}명)</span>
-            <button className="zr-round-btn" aria-label="동료 목록 닫기" onClick={() => setShowTeammates(false)}>
+            <span>LIVE RANKING</span>
+            <button className="zr-round-btn" aria-label="랭킹 닫기" onClick={() => setShowTeammates(false)}>
               <GameIcon name="close" size={18} />
             </button>
           </div>
-          {teammates.map((p) => (
-            <div key={p.id} className="zr-teammate-row">
-              <span className="zr-teammate-name">
-                {p.nickname}
-                {p.id === game.roomPlayerId ? ' (나)' : ''}
-              </span>
-              <span className="zr-teammate-stats">
-                {(p.distance_m / 1000).toFixed(2)}km · {p.health != null ? `생명 ${Math.min(START_HEALTH, Math.max(0, Number(p.health) || 0))}` : '생명 확인 중'}
-                {p.status === 'caught' && ' · 탈락'}
-                {p.status === 'finished' && ' · 완주'}
-              </span>
-            </div>
-          ))}
+          <Leaderboard players={teammates} playerId={game.roomPlayerId} error={rankingError || (saveState === 'error' ? '내 기록 전송을 재시도하고 있어요.' : '')} />
         </div>
       )}
 

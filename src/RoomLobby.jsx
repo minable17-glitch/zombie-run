@@ -160,10 +160,12 @@ export default function RoomLobby({ zombieMaps = [], onBack, onStart, startError
         <div className="zr-start-card">
           <h1 className="zr-title">그룹으로 같이 뛰기</h1>
           <p className="zr-subtitle">
-            방을 만들어 코드를 공유하면, 참가자들이 다 들어온 뒤 다같이 시작할 수 있어요. 시작하면 각자 자기
-            좀비를 만나지만, 서로의 거리·생존 상태는 실시간으로 볼 수 있어요.
+            회원가입 없이 닉네임과 방 코드로 참가하세요. 자유 모드와 저장된 맵 모두 생존 시간으로 순위를 겨뤄요.
           </p>
-          <button className="zr-btn zr-btn-primary" onClick={() => setStep('create')}>
+          <button className="zr-btn zr-btn-primary" onClick={() => { setMapId(null); setPlayMode('free'); setStep('create') }}>
+            자유 모드 방 만들기
+          </button>
+          <button className="zr-btn zr-btn-ghost" onClick={() => setStep('create')}>
             방 만들기 (방장)
           </button>
           <button className="zr-btn zr-btn-ghost" onClick={() => setStep('join')}>
@@ -320,6 +322,8 @@ export default function RoomLobby({ zombieMaps = [], onBack, onStart, startError
         <h1 className="zr-title">대기실</h1>
         <p className="zr-subtitle">이 코드를 다른 사람들에게 알려주세요</p>
         <div className="zr-room-code">{room?.code}</div>
+        <p className="zr-mode-description">{room?.config?.mapId ? '저장된 맵' : room?.config?.playMode === 'restricted' ? '제한구역 모드' : '자유 모드'} · 생존 랭킹</p>
+        <p className="zr-ranking-note">같은 방 참가자끼리 경쟁합니다. 게임 지도에서 내 순위를 확인하세요.</p>
         {room?.config?.mapId && (
           <p className="zr-pace-hint" style={{ textAlign: 'center' }}>
             🗺️ 선택된 지도: {zombieMaps.find((m) => m.id === room.config.mapId)?.name || '(불러오는 중…)'}

@@ -1138,7 +1138,7 @@ button:active:not(:disabled) {
 
   .zr-game-shell .zr-hud-side .zr-badge {
     grid-column: 1;
-    grid-row: 3;
+    grid-row: auto;
   }
 
   .zr-game-shell .zr-hud-side .zr-enemy-counter strong,

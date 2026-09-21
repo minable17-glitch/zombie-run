@@ -3,7 +3,7 @@ import { beforeAll, afterAll, test, expect } from 'vitest'
 import { PGlite } from '@electric-sql/pglite'
 import { readFileSync } from 'node:fs'
 
-const migration = ['20260909140000_zombie_run_security.sql', '20260910010000_room_expiration.sql', '20260911030000_legacy_profile_lookup.sql', '20260916010000_map_boundary.sql']
+const migration = ['20260909140000_zombie_run_security.sql', '20260910010000_room_expiration.sql', '20260911030000_legacy_profile_lookup.sql', '20260916010000_map_boundary.sql', '20260921010000_room_survival_rank.sql']
   .map(name => readFileSync('supabase/migrations/' + name, 'utf8').replace(/^\uFEFF/, '').trim()).join('\n\n')
 const ids = {
   host: '00000000-0000-4000-8000-000000000001',
@@ -164,4 +164,26 @@ test('map boundaries persist under owner permissions and malformed boundaries ar
   expect(inserted.rows[0].boundary).toEqual(boundary)
   await expect(asUser(ids.account, 'update zombie_maps set boundary=$1 where id=$2', [[{lat:37,lon:127}], inserted.rows[0].id])).rejects.toThrow()
   expect((await asUser(ids.stranger,'update zombie_maps set boundary=null where id=$1 returning id',[inserted.rows[0].id])).rows).toHaveLength(0)
+})
+
+test('survival stats are room-private, bounded, monotonic and immutable after finish', async () => {
+  const made = (await asUser(ids.stranger, "select zr_create_room('Rank test',$1) result", [{playMode:'free'}])).rows[0].result
+  const room = made.room.id
+  await asUser(ids.stranger, 'select zr_start_room($1)', [room])
+  await db.query("update game_rooms set started_at=now()-interval '60 seconds' where id=$1", [room])
+  await expect(asUser(ids.host, "select zr_update_stat_v2($1,1,6,'alive',10)", [room])).rejects.toThrow()
+  await asUser(ids.stranger, "select zr_update_stat_v2($1,100,6,'alive',40)", [room])
+  await asUser(ids.stranger, "select zr_update_stat_v2($1,50,6,'alive',10)", [room])
+  expect((await db.query('select elapsed_sec,distance_m from room_players where room_id=$1',[room])).rows[0]).toEqual({elapsed_sec:40,distance_m:100})
+  await expect(asUser(ids.stranger, "select zr_update_stat_v2($1,100,6,'alive',-1)", [room])).rejects.toThrow()
+  await asUser(ids.stranger, "select zr_update_stat_v2($1,99999,0,'caught',80000)", [room])
+  const result = (await asUser(ids.stranger, 'select zr_read_room($1) result', [room])).rows[0].result
+  const final = result.players[0]
+  expect(final.elapsed_sec).toBeGreaterThanOrEqual(60)
+  expect(final.elapsed_sec).toBeLessThan(65)
+  expect(final.distance_m).toBeLessThan(650)
+  expect(final).not.toHaveProperty('auth_user_id')
+  await asUser(ids.stranger, "select zr_update_stat_v2($1,99999,6,'alive',80000)", [room])
+  expect((await asUser(ids.stranger, 'select zr_read_room($1) result', [room])).rows[0].result.players[0]).toEqual(final)
+  await expect(asUser(ids.host, 'select zr_read_room($1)', [room])).rejects.toThrow()
 })

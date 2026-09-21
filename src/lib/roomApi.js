@@ -27,7 +27,7 @@ export const joinRoom = (code, nickname) => rpc('zr_join_room', { p_code: code, 
 export const readRoom = (id) => rpc('zr_read_room', { p_room: id })
 export const startRoom = (id) => rpc('zr_start_room', { p_room: id })
 export const leaveRoom = (id) => rpc('zr_leave_room', { p_room: id })
-export const updateRoomStat = (roomId, distance, health, status) => rpc('zr_update_stat', {
-  p_room: roomId, p_distance: distance, p_health: health, p_status: status,
+export const updateRoomStat = (roomId, distance, health, status, elapsedSec) => rpc('zr_update_stat_v2', {
+  p_room: roomId, p_distance: distance, p_health: health, p_status: status, p_elapsed: Math.floor(elapsedSec),
 })
 
