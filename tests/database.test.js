@@ -3,7 +3,7 @@ import { beforeAll, afterAll, test, expect } from 'vitest'
 import { PGlite } from '@electric-sql/pglite'
 import { readFileSync } from 'node:fs'
 
-const migration = ['20260909140000_zombie_run_security.sql', '20260910010000_room_expiration.sql', '20260911030000_legacy_profile_lookup.sql', '20260916010000_map_boundary.sql', '20260921010000_room_survival_rank.sql', '20260922010000_personal_survival.sql', '20260922020000_finished_rooms.sql', '20260923010000_solo_maps.sql', '20260923020000_six_digit_codes.sql']
+const migration = ['20260909140000_zombie_run_security.sql', '20260910010000_room_expiration.sql', '20260911030000_legacy_profile_lookup.sql', '20260916010000_map_boundary.sql', '20260921010000_room_survival_rank.sql', '20260922010000_personal_survival.sql', '20260922020000_finished_rooms.sql', '20260923010000_solo_maps.sql', '20260923020000_six_digit_codes.sql', '20260923021000_code_attempt_guard.sql']
   .map(name => readFileSync('supabase/migrations/' + name, 'utf8').replace(/^\uFEFF/, '').trim()).join('\n\n')
 const ids = {
   host: '00000000-0000-4000-8000-000000000001',
