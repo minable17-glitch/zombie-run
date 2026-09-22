@@ -1,7 +1,7 @@
 import React from 'react'
 import { test, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react'
-vi.mock('../src/lib/runnerApi.js', () => ({currentRunner:vi.fn(),connectRunner:vi.fn(),disconnectRunner:vi.fn(),soloBoard:vi.fn()}))
+vi.mock('../src/lib/runnerApi.js', () => ({currentRunner:vi.fn(),connectRunner:vi.fn(),disconnectRunner:vi.fn(),soloBoard:vi.fn(),changeRunnerCode:vi.fn()}))
 import * as api from '../src/lib/runnerApi.js'
 import PersonalRunner from '../src/PersonalRunner.jsx'
 import PersonalBoard from '../src/PersonalBoard.jsx'
@@ -54,6 +54,22 @@ test('solo runner can choose a shared map and switch back to unmapped running', 
  await waitFor(()=>expect(screen.getByLabelText('달릴 장소').disabled).toBe(false))
  fireEvent.change(screen.getByLabelText('달릴 장소'),{target:{value:''}})
  await waitFor(()=>expect(api.soloBoard).toHaveBeenLastCalledWith(config))
+})
+
+test('runner changes own code with matching six-digit confirmation', async () => {
+ api.currentRunner.mockResolvedValue(runner)
+ api.changeRunnerCode.mockResolvedValue({changed:true})
+ render(<PersonalRunner config={config} onStart={()=>{}} onBack={()=>{}} />)
+ fireEvent.click(await screen.findByText('개인 코드 변경'))
+ fireEvent.change(screen.getByLabelText('새 개인 코드'),{target:{value:'012345'}})
+ fireEvent.change(screen.getByLabelText('새 개인 코드 확인'),{target:{value:'012346'}})
+ fireEvent.click(screen.getByText('새 코드 저장'))
+ expect(api.changeRunnerCode).not.toHaveBeenCalled()
+ expect(screen.getByText('두 코드가 같지 않아요. 다시 확인해주세요.')).toBeTruthy()
+ fireEvent.change(screen.getByLabelText('새 개인 코드 확인'),{target:{value:'012345'}})
+ fireEvent.click(screen.getByText('새 코드 저장'))
+ expect(await screen.findByText('012345')).toBeTruthy()
+ expect(api.changeRunnerCode).toHaveBeenCalledExactlyOnceWith('012345')
 })
 
 test('personal best improvement and server-ranked ties are shown without reranking top 50', () => {

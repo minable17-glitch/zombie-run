@@ -3,7 +3,7 @@ import { beforeAll, afterAll, test, expect } from 'vitest'
 import { PGlite } from '@electric-sql/pglite'
 import { readFileSync } from 'node:fs'
 
-const migration = ['20260909140000_zombie_run_security.sql', '20260910010000_room_expiration.sql', '20260911030000_legacy_profile_lookup.sql', '20260916010000_map_boundary.sql', '20260921010000_room_survival_rank.sql', '20260922010000_personal_survival.sql', '20260922020000_finished_rooms.sql', '20260923010000_solo_maps.sql']
+const migration = ['20260909140000_zombie_run_security.sql', '20260910010000_room_expiration.sql', '20260911030000_legacy_profile_lookup.sql', '20260916010000_map_boundary.sql', '20260921010000_room_survival_rank.sql', '20260922010000_personal_survival.sql', '20260922020000_finished_rooms.sql', '20260923010000_solo_maps.sql', '20260923020000_six_digit_codes.sql']
   .map(name => readFileSync('supabase/migrations/' + name, 'utf8').replace(/^\uFEFF/, '').trim()).join('\n\n')
 const ids = {
   host: '00000000-0000-4000-8000-000000000001',
@@ -203,10 +203,10 @@ test('survival stats are room-private, bounded, monotonic and immutable after fi
 
 test('personal codes restore identity across devices without exposing codes or other histories', async () => {
   const a = (await asUser(ids.host, "select zr_runner_connect('Solo A',null) result")).rows[0].result
-  expect(a.code).toMatch(/^[A-F0-9]{20}$/)
+  expect(a.code).toMatch(/^[0-9]{6}$/)
   expect((await asUser(ids.member,"select zr_runner_connect('Solo A','wrong') result")).rows[0].result.error).toBeTruthy()
   expect((await asUser(ids.member,'select zr_runner_me() result')).rows[0].result).toBeNull()
-  const restored = (await asUser(ids.stranger,'select zr_runner_connect($1,$2) result',['Solo A',a.code.match(/.{4}/g).join('-').toLowerCase()])).rows[0].result
+  const restored = (await asUser(ids.stranger,'select zr_runner_connect($1,$2) result',['Solo A',a.code.match(/.{1,3}/g).join('-').toLowerCase()])).rows[0].result
   expect(restored.runner).toEqual(a.runner)
   expect(restored.code).toBeNull()
   expect((await asUser(ids.stranger,'select zr_runner_me() result')).rows[0].result).toEqual(a.runner)
@@ -270,4 +270,18 @@ test('a different map owner can share a map for a host to select and start', asy
   expect((await asUser(ids.host,"select zr_solo_board('free',1,0) result")).rows[0].result.me.elapsed_sec).toBe(80)
   await expect(asUser(ids.host,'select zr_solo_start($1,$2,1,0)',['20000000-0000-4000-8000-000000000002','map:00000000-0000-0000-0000-000000000000'])).rejects.toThrow(/지도가 없어요/)
   expect((await asUser(ids.member,'update zombie_maps set name=$1 where id=$2 returning id',['변경 불가',map.id])).rows).toHaveLength(0)
+})
+
+test('six-digit change preserves records, rejects invalid codes and invalidates old credentials', async () => {
+ const oldCode='ABCDEF0123456789ABCD'
+ await db.query("update zr_private.runners set code_hash=sha256(convert_to($1,'UTF8')),code_attempts=0 where nickname_key='solo a'",[oldCode])
+ const before=(await asUser(ids.host,"select zr_solo_board('free',1,0) result")).rows[0].result
+ const restored=(await asUser(ids.member,'select zr_runner_connect($1,$2) result',['Solo A',oldCode])).rows[0].result
+ expect(restored.runner.nickname).toBe('Solo A')
+ await expect(asUser(ids.host,"select zr_runner_change_code('12345')")).rejects.toThrow(/6자리/)
+ await asUser(ids.host,"select zr_runner_change_code('012345')")
+ expect((await asUser(ids.member,'select zr_runner_me() result')).rows[0].result).toBeNull()
+ expect((await asUser(ids.member,'select zr_runner_connect($1,$2) result',['Solo A',oldCode])).rows[0].result.error).toBeTruthy()
+ expect((await asUser(ids.member,"select zr_runner_connect('Solo A','012345') result")).rows[0].result.runner.nickname).toBe('Solo A')
+ expect((await asUser(ids.host,"select zr_solo_board('free',1,0) result")).rows[0].result).toEqual(before)
 })
