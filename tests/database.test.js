@@ -3,7 +3,7 @@ import { beforeAll, afterAll, test, expect } from 'vitest'
 import { PGlite } from '@electric-sql/pglite'
 import { readFileSync } from 'node:fs'
 
-const migration = ['20260909140000_zombie_run_security.sql', '20260910010000_room_expiration.sql', '20260911030000_legacy_profile_lookup.sql', '20260916010000_map_boundary.sql', '20260921010000_room_survival_rank.sql', '20260922010000_personal_survival.sql']
+const migration = ['20260909140000_zombie_run_security.sql', '20260910010000_room_expiration.sql', '20260911030000_legacy_profile_lookup.sql', '20260916010000_map_boundary.sql', '20260921010000_room_survival_rank.sql', '20260922010000_personal_survival.sql', '20260922020000_finished_rooms.sql']
   .map(name => readFileSync('supabase/migrations/' + name, 'utf8').replace(/^\uFEFF/, '').trim()).join('\n\n')
 const ids = {
   host: '00000000-0000-4000-8000-000000000001',
@@ -99,6 +99,19 @@ test('only hosts start rooms, only members read them, repeated join preserves pl
   await expect(asUser(ids.stranger, "select zr_update_stat($1,0,6,'alive')", [room])).rejects.toThrow()
   await expect(asUser(ids.member, "select zr_update_stat($1,'NaN',6,'alive')", [room])).rejects.toThrow()
   await expect(asUser(ids.member, 'update room_players set health=100')).rejects.toThrow(/permission denied/)
+})
+
+test('completed rooms can be closed by their owner while active rooms and final records survive', async () => {
+ const made=(await asUser(ids.host,"select zr_create_room('Cleanup',$1) result",[{}])).rows[0].result
+ await asUser(ids.host,'select zr_start_room($1)',[made.room.id])
+ await asUser(ids.host,'select zr_cleanup_finished_rooms()')
+ expect((await db.query('select status from game_rooms where id=$1',[made.room.id])).rows[0].status).toBe('started')
+ await asUser(ids.host,"select zr_update_stat_v2($1,0,6,'finished',0)",[made.room.id])
+ await asUser(ids.stranger,'select zr_cleanup_finished_rooms()')
+ expect((await db.query('select status from game_rooms where id=$1',[made.room.id])).rows[0].status).toBe('started')
+ await asUser(ids.host,'select zr_cleanup_finished_rooms()')
+ expect((await db.query('select status from game_rooms where id=$1',[made.room.id])).rows[0].status).toBe('closed')
+ expect((await db.query('select status from room_players where room_id=$1',[made.room.id])).rows[0].status).toBe('finished')
 })
 
 test('host leaving closes lobby; invalid config and malformed map routes are rejected', async () => {

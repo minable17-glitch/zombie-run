@@ -23,7 +23,7 @@ import { isLocalTestMode, makeTestPosition } from './lib/testMode.js'
 import { insideArea } from './lib/playArea.js'
 import { usableChasePath } from './lib/routePressure.js'
 import {
-  makeInitialGame, applyStartSetup, advanceGame, updatePosition, findRouteCandidate, summonFirstWave,
+  makeInitialGame, applyStartSetup, advanceGame, updatePosition, findRouteCandidate, summonFirstWave, turnAround,
   formatTime, formatPace, START_HEALTH,
   LIVE_PACE_MIN_WINDOW_SEC, ROOM_STAT_PUSH_SEC, ROOM_TEAMMATES_POLL_MS,
 } from './lib/gameEngine.js'
@@ -203,12 +203,13 @@ function GameApp() {
     const needsRoute = findRouteCandidate(game, now)
       if (needsRoute && ORS_API_KEY) {
         const runId = game.runId
+        const turnaroundCount = game.turnaroundCount
         const targetId = needsRoute.id
         const targetPos = { lat: game.playerPos.lat, lon: game.playerPos.lon }
         const fromPos = { lat: needsRoute.lat, lon: needsRoute.lon }
         game.zombies = game.zombies.map((z) => (z.id === targetId ? { ...z, routing: true } : z))
         fetchWalkingPath(ORS_API_KEY, fromPos, targetPos).then((path) => {
-          if (game.runId !== runId || game.status !== "playing") return
+          if (game.runId !== runId || game.status !== "playing" || game.turnaroundCount !== turnaroundCount) return
           game.zombies = game.zombies.map((z) => {
             if (z.id !== targetId) return z
             const usable = usableChasePath(path,z,game.playerPos)
@@ -755,6 +756,9 @@ function GameApp() {
       </div>}
 
       <div className="zr-banner-stack">
+        {game.zombies.length > 0 && <button className="zr-banner zr-summon-button" disabled={gpsPaused || Date.now()-game.turnaroundAt<30000} onClick={() => {
+          if (turnAround(game,Date.now())) { proximityRef.current.stop(); toast('반환! 반대편에서 좀비가 다시 쫓아옵니다.'); rerender() }
+        }}>{Date.now()-game.turnaroundAt<30000 ? `반환점 돌기 · ${Math.ceil((30000-Date.now()+game.turnaroundAt)/1000)}초 후` : '반환점 돌기'}</button>}
         {!game.presetMap && !game.roomId && game.waveCount === 0 && <button className="zr-banner zr-summon-button" disabled={gpsPaused || frozenActive} onClick={() => {
           if (summonFirstWave(game, Date.now())) { toast('좀비가 등장했어요! 달리세요.'); rerender() }
         }}>좀비 지금 등장 · 자동 등장까지 {Math.max(0, Math.ceil(game.nextWaveSec - game.elapsedSec))}초</button>}

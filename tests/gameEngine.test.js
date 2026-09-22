@@ -1,11 +1,38 @@
 import { test, expect } from 'vitest'
-import { advanceGame, applyStartSetup, makeInitialGame, updatePosition, summonFirstWave } from '../src/lib/gameEngine.js'
+import { advanceGame, applyStartSetup, makeInitialGame, updatePosition, summonFirstWave, turnAround } from '../src/lib/gameEngine.js'
 import { haversineDistance } from '../src/lib/geo.js'
 import { insidePolygon } from '../src/lib/playArea.js'
 
 function playing() {
   return { ...makeInitialGame(), status: 'playing', playerPos: { lat: 37, lon: 127 } }
 }
+
+test('turnaround moves pursuers to the opposite side without changing score and prevents repeated taps', () => {
+ const g=playing(); g.headingDeg=0
+ g.zombies=[{id:'z',lat:36.999,lon:127,speed:2,path:[g.playerPos],routing:true}]
+ expect(turnAround(g,10000)).toBe(true)
+ expect(g.zombies[0].lat).toBeGreaterThan(37)
+ expect(g.zombies[0].path).toBeNull()
+ expect(g.zombies[0].routing).toBe(false)
+ expect(g.headingDeg).toBe(180)
+ expect(g.elapsedSec).toBe(0)
+ expect(g.distance).toBe(0)
+ expect(turnAround(g,10001)).toBe(false)
+ const before=g.zombies[0].lat
+ advanceGame(g,1,11000)
+ expect(g.zombies[0].lat).toBeLessThan(before)
+})
+
+test('turnaround on a saved route stays on that route and reverses pursuit direction', () => {
+ const g=playing(); g.playerPos={lat:37.005,lon:127}; g.headingDeg=0
+ const route=[{lat:37,lon:127},{lat:37.01,lon:127}]
+ applyStartSetup(g,g.playerPos,{paceMps:2,forcedMap:{id:'route',center:g.playerPos,radius:1000,routes:[route]}})
+ expect(turnAround(g,10000)).toBe(true)
+ expect(g.zombies[0].patrolRoute).toBe(route)
+ expect(g.zombies[0].lat).toBeGreaterThan(g.playerPos.lat)
+ expect(g.zombies[0].lon).toBe(127)
+ expect(g.zombies[0].patrolDir).toBe(-1)
+})
 
 test('early summon is one-shot and schedules the next wave from summon time', () => {
   const game=playing()

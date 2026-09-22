@@ -22,7 +22,10 @@ async function rpc(name, args) {
     : error.message)
   return data
 }
-export const createRoom = (nickname, config) => rpc('zr_create_room', { p_nickname: nickname, p_config: config })
+export const createRoom = async (nickname, config) => {
+  await rpc('zr_cleanup_finished_rooms', {})
+  return rpc('zr_create_room', { p_nickname: nickname, p_config: config })
+}
 export const joinRoom = (code, nickname) => rpc('zr_join_room', { p_code: code, p_nickname: nickname })
 export const readRoom = (id) => rpc('zr_read_room', { p_room: id })
 export const startRoom = (id) => rpc('zr_start_room', { p_room: id })

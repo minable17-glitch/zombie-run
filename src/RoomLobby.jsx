@@ -162,10 +162,10 @@ export default function RoomLobby({ zombieMaps = [], onBack, onStart, startError
           <p className="zr-subtitle">
             회원가입 없이 닉네임과 방 코드로 참가하세요. 자유 모드와 저장된 맵 모두 생존 시간으로 순위를 겨뤄요.
           </p>
-          <button className="zr-btn zr-btn-primary" onClick={() => setStep('create')}>
+          <button className="zr-btn zr-btn-primary" onClick={() => { setError(''); setStep('create') }}>
             방 만들기 (방장)
           </button>
-          <button className="zr-btn zr-btn-ghost" onClick={() => setStep('join')}>
+          <button className="zr-btn zr-btn-ghost" onClick={() => { setError(''); setStep('join') }}>
             코드로 참가하기
           </button>
           <button className="zr-btn zr-btn-ghost" onClick={onBack}>
@@ -274,7 +274,7 @@ export default function RoomLobby({ zombieMaps = [], onBack, onStart, startError
           <button className="zr-btn zr-btn-primary" onClick={createRoom} disabled={busy}>
             {busy ? '만드는 중…' : '방 만들기'}
           </button>
-          <button className="zr-btn zr-btn-ghost" disabled={busy} onClick={() => setStep('choose')}>
+          <button className="zr-btn zr-btn-ghost" disabled={busy} onClick={() => { setError(''); setStep('choose') }}>
             뒤로
           </button>
         </div>
@@ -304,7 +304,7 @@ export default function RoomLobby({ zombieMaps = [], onBack, onStart, startError
           <button className="zr-btn zr-btn-primary" onClick={joinRoom} disabled={busy}>
             {busy ? '참가하는 중…' : '참가하기'}
           </button>
-          <button className="zr-btn zr-btn-ghost" disabled={busy} onClick={() => setStep('choose')}>
+          <button className="zr-btn zr-btn-ghost" disabled={busy} onClick={() => { setError(''); setStep('choose') }}>
             뒤로
           </button>
         </div>

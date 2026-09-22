@@ -56,6 +56,8 @@ test('summon button spawns immediately once without advancing the run clock',asy
  expect(Number(screen.getByTestId('game-map').textContent)).toBeGreaterThan(0)
  expect(screen.queryByRole('button',{name:/좀비 지금 등장/})).toBeNull()
  expect(screen.getByText('0:00')).toBeTruthy()
+ fireEvent.click(screen.getByRole('button',{name:'반환점 돌기'}))
+ expect(screen.getByRole('button',{name:/반환점 돌기 · 30초 후/}).disabled).toBe(true)
 })
 
 test('GPS failure permits retry; stale signal pauses time and damage',async()=>{

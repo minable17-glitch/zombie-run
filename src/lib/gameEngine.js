@@ -1,6 +1,6 @@
 import {
   advanceAlongPath, bearingTo, clampToRadius, haversineDistance,
-  moveToward, randomPointInDirection, randomPointNear,
+  moveToward, randomPointInDirection, randomPointNear, destinationPoint,
 } from './geo.js'
 import { PACE_PRESETS, DEFAULT_PACE_IDX } from './gameConfig.js'
 import { measureMovement, GPS_STALE_MS, HIT_GRACE_MS } from './gameSafety.js'
@@ -75,6 +75,8 @@ export function makeInitialGame() {
     pickups: [],
     waveCount: 0,
     nextWaveSec: FIRST_WAVE_SEC,
+    turnaroundAt: -Infinity,
+    turnaroundCount: 0,
     gameOverReason: null,
     targetPaceMps: PACE_PRESETS[DEFAULT_PACE_IDX].mps,
     paceSamples: [], // 실시간 페이스 계산용 { t, d } 샘플 (최근 LIVE_PACE_WINDOW_MS만 유지)
@@ -194,6 +196,28 @@ export function applyStartSetup(game, startPos, { paceMps, playMode, radiusM, fo
   return matched
 }
 
+
+export function turnAround(game, now) {
+  if (game.status !== 'playing' || !game.playerPos || now-game.turnaroundAt<30000 || !game.zombies.length) return false
+  const player=game.playerPos
+  const heading=game.headingDeg ?? bearingTo(game.zombies[0].lat,game.zombies[0].lon,player.lat,player.lon)
+  game.headingDeg=(heading+180)%360
+  game.headingAnchor={...player}
+  game.zombies=game.zombies.map(z => {
+    if (z.patrolRoute) {
+      const replacement=patrolReinforcement({...game,presetMap:{routes:[z.patrolRoute]}},now)
+      return replacement ? {...z,...replacement,id:z.id,speed:z.speed} : z
+    }
+    const distance=haversineDistance(player.lat,player.lon,z.lat,z.lon)
+    const bearing=(bearingTo(player.lat,player.lon,z.lat,z.lon)+180)%360
+    let point=destinationPoint(player.lat,player.lon,Math.max(35,distance),bearing)
+    if (game.areaCenter && game.areaRadius) point=clampToRadius(point,game.areaCenter,game.areaRadius)
+    return {...z,...point,path:null,pathFetchedFor:null,lastRouteAt:0,routing:false}
+  })
+  game.turnaroundAt=now
+  game.turnaroundCount+=1
+  return true
+}
 
 export function summonFirstWave(game, now) {
   if (game.status !== 'playing' || game.presetMap || game.roomId || game.waveCount !== 0 || !game.playerPos || now < game.frozenUntil) return false
