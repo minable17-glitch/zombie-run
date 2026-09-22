@@ -301,12 +301,12 @@ function GameApp() {
         const gpsStartPos = readFix(position)
         if (!gpsStartPos) return fail('GPS 신호가 부정확해요. 야외에서 다시 시작해주세요.')
         const forcedMap = config.mapId ? zombieMaps.find(m => m.id === config.mapId) : null
-        if (config.mapId && !forcedMap) return fail('선택한 지도가 없어요. 방에서 지도를 다시 선택해주세요.')
+        if (config.mapId && !forcedMap) return fail('선택한 지도가 없어요. 지도를 다시 선택해주세요.')
         const startPos = isLocalTestMode() && forcedMap
           ? { ...gpsStartPos, ...(forcedMap.boundary ? forcedMap.routes[0][0] : forcedMap.center) }
           : gpsStartPos
         if (!isLocalTestMode() && forcedMap && !insideArea(startPos, forcedMap.center, forcedMap.radius, forcedMap.boundary))
-          return fail('방장이 선택한 지도 구역 안으로 이동한 뒤 다시 시도해주세요.')
+          return fail('선택한 지도 구역 안으로 이동한 뒤 다시 시도해주세요.')
         let soloId = null
         if (session?.soloRunner && !isLocalTestMode()) {
           try {
@@ -413,7 +413,7 @@ function GameApp() {
   }, [mode])
 
   const requestLocationAndStart = useCallback(() => {
-    if (supabase && !isLocalTestMode()) { setGeoError(''); setMode('personal'); return }
+    if (supabase && !isLocalTestMode()) { refreshZombieMaps(); setGeoError(''); setMode('personal'); return }
     return startRun({ paceIdx, playMode, radiusIdx })
   }, [startRun, paceIdx, playMode, radiusIdx, setMode])
 
@@ -485,7 +485,7 @@ function GameApp() {
   }
 
   if (mode === 'personal') {
-    return <PersonalRunner config={{paceIdx,playMode,radiusIdx}} onBack={() => setMode('game')} startError={geoError}
+    return <PersonalRunner config={{paceIdx,playMode,radiusIdx}} zombieMaps={zombieMaps} onBack={() => setMode('game')} startError={geoError}
       onStart={async (config, session) => {
         const started = await startRun(config, session)
         if (started) setMode('game')

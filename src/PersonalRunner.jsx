@@ -2,7 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { currentRunner, connectRunner, disconnectRunner, soloBoard } from './lib/runnerApi.js'
 import PersonalBoard from './PersonalBoard.jsx'
 
-export default function PersonalRunner({ config, onStart, onBack, startError }) {
+export default function PersonalRunner({ config: baseConfig, zombieMaps = [], onStart, onBack, startError }) {
+  const [mapId, setMapId] = useState('')
+  const selectedMap = zombieMaps.find(m => m.id === mapId)
+  const config = selectedMap ? { ...baseConfig, mapId:selectedMap.id, mapName:selectedMap.name } : baseConfig
   const [runner, setRunner] = useState(null)
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('login')
@@ -15,9 +18,11 @@ export default function PersonalRunner({ config, onStart, onBack, startError }) 
   const [board, setBoard] = useState(null)
   const [boardError, setBoardError] = useState('')
   const active = useRef(false), lock = useRef(false)
+  const boardRequest = useRef(0)
   const refreshBoard = async () => {
-    try { const data = await soloBoard(config); if (active.current) { setBoard(data); setBoardError('') } }
-    catch { if (active.current) setBoardError('랭킹을 불러오지 못했어요. 다시 조회해주세요.') }
+    const request = ++boardRequest.current
+    try { const data = await soloBoard(config); if (active.current && request === boardRequest.current) { setBoard(data); setBoardError('') } }
+    catch { if (active.current && request === boardRequest.current) setBoardError('랭킹을 불러오지 못했어요. 다시 조회해주세요.') }
   }
   useEffect(() => {
     active.current = true
@@ -26,7 +31,7 @@ export default function PersonalRunner({ config, onStart, onBack, startError }) 
       .finally(() => { if (active.current) setLoading(false) })
     return () => { active.current = false }
   }, [])
-  useEffect(() => { if (runner) void refreshBoard() }, [runner, config.playMode, config.paceIdx, config.radiusIdx])
+  useEffect(() => { setBoard(null); if (runner) void refreshBoard() }, [runner, config.playMode, config.paceIdx, config.radiusIdx, config.mapId])
   const connect = async e => {
     e.preventDefault()
     if (lock.current) return
@@ -49,6 +54,13 @@ export default function PersonalRunner({ config, onStart, onBack, startError }) 
     <p className="zr-eyebrow">SOLO SURVIVAL / PERSONAL BEST</p>
     <h1 className="zr-title">{runner ? `${runner.nickname}의 생존 러닝` : '나의 생존 기록'}</h1>
     <p className="zr-subtitle">혼자 달리고, 나의 최고 기록을 넘고, 다른 러너와 경쟁하세요.</p>
+    <label className="zr-personal-label">달릴 장소
+      <select className="zr-admin-input" value={mapId} disabled={busy} onChange={e => setMapId(e.target.value)}>
+        <option value="">지도 없이 달리기</option>
+        {zombieMaps.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+      </select>
+    </label>
+    <p className="zr-ranking-note">{selectedMap ? `${selectedMap.name} · 좀비 경로 ${selectedMap.routes.length}개. 지도 구역 안에서 출발하세요. 이 맵의 같은 페이스끼리 기록을 비교해요.` : '저장된 맵을 선택하면 혼자서도 그 구역과 좀비 경로로 달릴 수 있어요.'}</p>
     {loading ? <p role="status">내 기록 접속 확인 중…</p> : !runner ? <>
       <div className="zr-pace-picker zr-pace-picker-2col">
         <button className={`zr-pace-btn${tab === 'login' ? ' zr-pace-btn-on' : ''}`} aria-pressed={tab === 'login'} onClick={() => { setTab('login'); setError('') }}>기존 기록 접속</button>

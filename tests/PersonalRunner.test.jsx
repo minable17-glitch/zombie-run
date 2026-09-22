@@ -42,6 +42,20 @@ test('existing nickname and personal code restore records without creating a roo
   expect(screen.queryByText('나의 개인 코드')).toBeNull()
 })
 
+test('solo runner can choose a shared map and switch back to unmapped running', async () => {
+ api.currentRunner.mockResolvedValue(runner)
+ const onStart=vi.fn().mockResolvedValue(false)
+ render(<PersonalRunner config={config} zombieMaps={[{id:'park',name:'공원',routes:[[]]}]} onStart={onStart} onBack={()=>{}} />)
+ await screen.findByText('생존 러닝 출발')
+ fireEvent.change(screen.getByLabelText('달릴 장소'),{target:{value:'park'}})
+ fireEvent.click(screen.getByText('생존 러닝 출발'))
+ await waitFor(()=>expect(onStart).toHaveBeenCalledWith({...config,mapId:'park',mapName:'공원'},{soloRunner:runner}))
+ expect(api.soloBoard).toHaveBeenLastCalledWith({...config,mapId:'park',mapName:'공원'})
+ await waitFor(()=>expect(screen.getByLabelText('달릴 장소').disabled).toBe(false))
+ fireEvent.change(screen.getByLabelText('달릴 장소'),{target:{value:''}})
+ await waitFor(()=>expect(api.soloBoard).toHaveBeenLastCalledWith(config))
+})
+
 test('personal best improvement and server-ranked ties are shown without reranking top 50', () => {
   render(<PersonalBoard config={config} board={{me:{...runner,rank:2,elapsed_sec:90,distance_m:120},total:3,recent:[],players:[{...runner,rank:2,elapsed_sec:90,distance_m:120}]}}
     result={{is_best:true,previous_sec:60,elapsed_sec:90}} />)

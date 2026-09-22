@@ -3,7 +3,7 @@ import { beforeAll, afterAll, test, expect } from 'vitest'
 import { PGlite } from '@electric-sql/pglite'
 import { readFileSync } from 'node:fs'
 
-const migration = ['20260909140000_zombie_run_security.sql', '20260910010000_room_expiration.sql', '20260911030000_legacy_profile_lookup.sql', '20260916010000_map_boundary.sql', '20260921010000_room_survival_rank.sql', '20260922010000_personal_survival.sql', '20260922020000_finished_rooms.sql']
+const migration = ['20260909140000_zombie_run_security.sql', '20260910010000_room_expiration.sql', '20260911030000_legacy_profile_lookup.sql', '20260916010000_map_boundary.sql', '20260921010000_room_survival_rank.sql', '20260922010000_personal_survival.sql', '20260922020000_finished_rooms.sql', '20260923010000_solo_maps.sql']
   .map(name => readFileSync('supabase/migrations/' + name, 'utf8').replace(/^\uFEFF/, '').trim()).join('\n\n')
 const ids = {
   host: '00000000-0000-4000-8000-000000000001',
@@ -259,5 +259,15 @@ test('a different map owner can share a map for a host to select and start', asy
   const room=(await asUser(ids.member,"select zr_create_room('공유 맵 방장',$1) result",[{mapId:map.id,paceIdx:1}])).rows[0].result.room
   const started=(await asUser(ids.member,'select zr_start_room($1) result',[room.id])).rows[0].result
   expect(started.config.mapId).toBe(map.id)
+  const soloId='20000000-0000-4000-8000-000000000001'
+  await asUser(ids.host,'select zr_solo_start($1,$2,1,0)',[soloId,`map:${map.id}`])
+  await db.query("update zr_private.solo_runs set started_at=now()-interval '30 seconds' where id=$1",[soloId])
+  const result=(await asUser(ids.host,"select zr_solo_update($1,20,30,'finished') result",[soloId])).rows[0].result
+  expect(result.previous_sec).toBeNull()
+  const board=(await asUser(ids.host,'select zr_solo_board($1,1,0) result',[`map:${map.id}`])).rows[0].result
+  expect(board.total).toBe(1)
+  expect(board.me.elapsed_sec).toBe(20)
+  expect((await asUser(ids.host,"select zr_solo_board('free',1,0) result")).rows[0].result.me.elapsed_sec).toBe(80)
+  await expect(asUser(ids.host,'select zr_solo_start($1,$2,1,0)',['20000000-0000-4000-8000-000000000002','map:00000000-0000-0000-0000-000000000000'])).rejects.toThrow(/지도가 없어요/)
   expect((await asUser(ids.member,'update zombie_maps set name=$1 where id=$2 returning id',['변경 불가',map.id])).rows).toHaveLength(0)
 })

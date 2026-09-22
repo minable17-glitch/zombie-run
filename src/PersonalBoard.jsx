@@ -15,7 +15,7 @@ export default function PersonalBoard({ board, config, result, error }) {
       <strong>{own ? `${own.rank}위 / ${board.total}명` : '첫 기록에 도전하세요'}</strong>
     </div>
     {own && <p className="zr-personal-best">{formatTime(own.elapsed_sec)} <span>생존 · {formatDistance(own.distance_m)}</span></p>}
-    <p className="zr-ranking-note">{config.playMode === 'restricted' ? `제한구역 ${AREA_RADIUS_PRESETS[config.radiusIdx]}m` : '자유 모드'} · 좀비 {PACE_PRESETS[config.paceIdx]?.label} 기준<br />같은 조건끼리 비교 · 1인 1개 최고 기록 · 생존 시간, 이동 거리순</p>
+    <p className="zr-ranking-note">{config.mapId ? `맵 · ${config.mapName || '선택한 지도'}` : config.playMode === 'restricted' ? `제한구역 ${AREA_RADIUS_PRESETS[config.radiusIdx]}m` : '자유 모드'} · 좀비 {PACE_PRESETS[config.paceIdx]?.label} 기준<br />같은 조건끼리 비교 · 1인 1개 최고 기록 · 생존 시간, 이동 거리순</p>
     {error && <p className="zr-error" role="alert">{error}</p>}
     {!board && !error && <p role="status">랭킹을 불러오는 중…</p>}
     <ol className="zr-ranking-list">
