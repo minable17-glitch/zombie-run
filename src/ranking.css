@@ -28,3 +28,6 @@
 .zr-personal-best span { font-size: 13px; color: #a6b3bd; font-weight: 400; }
 .zr-personal-history { display: flex; gap: 12px; justify-content: space-between; padding: 12px 0; font-size: 13px; border-bottom: 1px solid #344048; }
 .zr-ranking summary { min-height: 44px; padding: 12px 0; cursor: pointer; }
+.zr-game-shell .zr-banner.zr-summon-button { pointer-events: auto; min-height: 48px; background: #3b201d; color: #fff; border: 1px solid #ec6653; cursor: pointer; font-size: 13px; font-weight: 700; }
+.zr-summon-button:disabled { opacity: .55; cursor: default; }
+.zr-summon-button:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }

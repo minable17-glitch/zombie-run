@@ -27,10 +27,10 @@ test('proximity pulses escalate immediately, are throttled, and stop on pause or
   alert.update(100, 0)
   expect(vibrate).not.toHaveBeenCalled()
   alert.update(60, 1000)
-  alert.update(50, 2000)
+  alert.update(55, 2000)
   expect(vibrate).toHaveBeenCalledTimes(1)
   alert.update(20, 2500)
-  expect(vibrate).toHaveBeenLastCalledWith([180,100,180])
+  expect(vibrate).toHaveBeenLastCalledWith([200,100,200])
   alert.update(20, 3000)
   expect(vibrate).toHaveBeenCalledTimes(2)
   alert.update(20, 5500)
@@ -41,6 +41,18 @@ test('proximity pulses escalate immediately, are throttled, and stop on pause or
   expect(vibrate).toHaveBeenCalledTimes(4)
   expect(() => createProximityAlert(() => { throw Error('blocked') }).update(1, 1)).not.toThrow()
   expect(() => createProximityAlert().update(1, 1)).not.toThrow()
+})
+
+test.each([[65,8000,[100]],[45,4000,[140,160,140]],[25,2000,[200,100,200]],[14,1000,[250,80,250,80,250]]])('distance %s uses its urgency cadence and cancels outside range', (distance,interval,pattern) => {
+  const vibrate=vi.fn(), alert=createProximityAlert(vibrate)
+  alert.update(distance,0)
+  expect(vibrate).toHaveBeenLastCalledWith(pattern)
+  alert.update(distance,interval-1)
+  expect(vibrate).toHaveBeenCalledTimes(1)
+  alert.update(distance,interval)
+  expect(vibrate).toHaveBeenCalledTimes(2)
+  alert.update(71,interval+1)
+  expect(vibrate).toHaveBeenLastCalledWith(0)
 })
 
 test('finish waits for an in-flight alive update and retries failed terminal saves', async () => {

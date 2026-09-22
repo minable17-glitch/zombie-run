@@ -195,6 +195,14 @@ export function applyStartSetup(game, startPos, { paceMps, playMode, radiusM, fo
 }
 
 
+export function summonFirstWave(game, now) {
+  if (game.status !== 'playing' || game.presetMap || game.roomId || game.waveCount !== 0 || !game.playerPos || now < game.frozenUntil) return false
+  spawnWave(game, now, () => {})
+  game.waveCount = 1
+  game.nextWaveSec = game.elapsedSec + NEXT_WAVE_SEC
+  return true
+}
+
 function spawnWave(game, now, emit) {
     if (!game.playerPos) return
     const room = MAX_CONCURRENT_ZOMBIES - game.zombies.length

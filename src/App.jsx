@@ -23,7 +23,7 @@ import { isLocalTestMode, makeTestPosition } from './lib/testMode.js'
 import { insideArea } from './lib/playArea.js'
 import { usableChasePath } from './lib/routePressure.js'
 import {
-  makeInitialGame, applyStartSetup, advanceGame, updatePosition, findRouteCandidate,
+  makeInitialGame, applyStartSetup, advanceGame, updatePosition, findRouteCandidate, summonFirstWave,
   formatTime, formatPace, START_HEALTH,
   LIVE_PACE_MIN_WINDOW_SEC, ROOM_STAT_PUSH_SEC, ROOM_TEAMMATES_POLL_MS,
 } from './lib/gameEngine.js'
@@ -755,6 +755,9 @@ function GameApp() {
       </div>}
 
       <div className="zr-banner-stack">
+        {!game.presetMap && !game.roomId && game.waveCount === 0 && <button className="zr-banner zr-summon-button" disabled={gpsPaused || frozenActive} onClick={() => {
+          if (summonFirstWave(game, Date.now())) { toast('좀비가 등장했어요! 달리세요.'); rerender() }
+        }}>좀비 지금 등장 · 자동 등장까지 {Math.max(0, Math.ceil(game.nextWaveSec - game.elapsedSec))}초</button>}
         {Date.now() < game.invulnerableUntil && <div role="status" className="zr-banner zr-banner-blue"><GameIcon name="shield" size={17} /> 보호 시간 · 거리를 벌리세요</div>}
         {frozenActive && <div className="zr-banner zr-banner-blue"><GameIcon name="freeze" size={17} /> 좀비 이동 정지 · {frozenRemaining}초</div>}
         {outsideArea && <div role="alert" className="zr-banner zr-banner-red"><GameIcon name="warning" size={17} /> 생존 구역을 벗어났습니다</div>}

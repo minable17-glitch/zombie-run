@@ -47,6 +47,17 @@ test('double start only creates one GPS request and game loop; finishing stops G
  expect(clearWatch).toHaveBeenCalledWith(123)
  expect(screen.getByText('생존 시간')).toBeTruthy()
 })
+test('summon button spawns immediately once without advancing the run clock',async()=>{
+ await renderApp()
+ await act(async()=>fireEvent.click(screen.getByRole('button',{name:'생존 러닝 시작'})))
+ await act(async()=>callbacks[0].success(fix()))
+ expect(screen.getByTestId('game-map').textContent).toBe('0')
+ fireEvent.click(screen.getByRole('button',{name:/좀비 지금 등장/}))
+ expect(Number(screen.getByTestId('game-map').textContent)).toBeGreaterThan(0)
+ expect(screen.queryByRole('button',{name:/좀비 지금 등장/})).toBeNull()
+ expect(screen.getByText('0:00')).toBeTruthy()
+})
+
 test('GPS failure permits retry; stale signal pauses time and damage',async()=>{
  await renderApp()
  await act(async()=>fireEvent.click(screen.getByRole('button',{name:'생존 러닝 시작'})))

@@ -1,11 +1,24 @@
 import { test, expect } from 'vitest'
-import { advanceGame, applyStartSetup, makeInitialGame, updatePosition } from '../src/lib/gameEngine.js'
+import { advanceGame, applyStartSetup, makeInitialGame, updatePosition, summonFirstWave } from '../src/lib/gameEngine.js'
 import { haversineDistance } from '../src/lib/geo.js'
 import { insidePolygon } from '../src/lib/playArea.js'
 
 function playing() {
   return { ...makeInitialGame(), status: 'playing', playerPos: { lat: 37, lon: 127 } }
 }
+
+test('early summon is one-shot and schedules the next wave from summon time', () => {
+  const game=playing()
+  game.elapsedSec=10
+  expect(summonFirstWave(game,10000)).toBe(true)
+  const count=game.zombies.length
+  expect(summonFirstWave(game,10001)).toBe(false)
+  expect(game.zombies).toHaveLength(count)
+  expect(game.elapsedSec).toBe(10)
+  expect(game.nextWaveSec).toBe(100)
+  expect(summonFirstWave({...playing(),presetMap:{}},10000)).toBe(false)
+  expect(summonFirstWave({...playing(),roomId:'room'},10000)).toBe(false)
+})
 
 test('polygon runs enforce their boundary and keep pickups inside the authored area', () => {
   const game=playing()
