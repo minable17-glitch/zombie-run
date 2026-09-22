@@ -9,8 +9,11 @@ vi.mock('../src/lib/supabaseClient.js', () => ({ supabase: { auth: {
 vi.mock('../src/lib/zombieMaps.js', () => ({ fetchZombieMaps: async () => state.maps }))
 vi.mock('../src/lib/roomApi.js', () => ({ readRoom: vi.fn(async () => ({ players: state.players })), updateRoomStat: vi.fn(async () => {}) }))
 vi.mock('../src/RoomLobby.jsx', () => ({ default: ({ onStart }) => <button onClick={() => onStart(state.config, { roomId:'room', playerId:'me', nickname:'나' })}>참가 테스트</button> }))
+vi.mock('../src/PersonalRunner.jsx', () => ({ default: ({config,onStart}) => <button onClick={() => onStart(config,{soloRunner:{id:'solo',nickname:'나'}})}>개인 출발 테스트</button> }))
+vi.mock('../src/lib/runnerApi.js', () => ({startSolo:vi.fn(async()=>({id:'run'})),updateSolo:vi.fn(async()=>({is_best:true,previous_sec:2,elapsed_sec:6})),soloBoard:vi.fn(async()=>({me:{id:'solo',nickname:'나',rank:1,elapsed_sec:6,distance_m:10},players:[],total:1,recent:[]}))}))
 vi.mock('../src/GameMap.jsx', () => ({ default: ({ patrolRoutes }) => <div data-testid="map" data-routes={patrolRoutes?.length ?? 0} /> }))
 import { updateRoomStat } from '../src/lib/roomApi.js'
+import { startSolo, updateSolo } from '../src/lib/runnerApi.js'
 import App from '../src/App.jsx'
 let start, watch
 const fix = () => ({ timestamp:Date.now(), coords:{ latitude:37, longitude:127, accuracy:5 } })
@@ -40,4 +43,21 @@ test.each([false,true])('room ranking and final record work in free/map mode (ma
   expect(updateRoomStat).toHaveBeenLastCalledWith('room',expect.any(Number),expect.any(Number),'finished',6)
   expect(screen.getByText('내 최종 기록 저장 완료')).toBeTruthy()
   expect(screen.getByText('내 순위 2위 / 2명')).toBeTruthy()
+})
+
+test('survival start uses personal identity, saves solo record and displays improvement without a room', async () => {
+  start = null
+  await act(async()=>{render(<App />)})
+  await act(async()=>{fireEvent.click(screen.getByRole('button',{name:'생존 러닝 시작'}))})
+  expect(start).toBeNull()
+  await act(async()=>{fireEvent.click(screen.getByText('개인 출발 테스트'))})
+  await act(async()=>{await start(fix())})
+  expect(startSolo).toHaveBeenCalledWith(expect.any(String),{paceIdx:1,playMode:'free',radiusIdx:1})
+  await act(async()=>{vi.advanceTimersByTime(6000);watch(fix())})
+  await act(async()=>{fireEvent.click(screen.getByRole('button',{name:'러닝 종료'}))})
+  expect(updateRoomStat).not.toHaveBeenCalled()
+  expect(updateSolo).toHaveBeenLastCalledWith(expect.any(String),expect.objectContaining({elapsed:6,status:'finished'}))
+  expect(screen.getByText('내 기록 저장 완료')).toBeTruthy()
+  expect(screen.getByText('개인 최고 기록 갱신!')).toBeTruthy()
+  expect(screen.getByText('이전 최고보다 0:04 더 생존했어요.')).toBeTruthy()
 })

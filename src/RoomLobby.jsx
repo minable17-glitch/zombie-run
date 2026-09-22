@@ -162,10 +162,7 @@ export default function RoomLobby({ zombieMaps = [], onBack, onStart, startError
           <p className="zr-subtitle">
             회원가입 없이 닉네임과 방 코드로 참가하세요. 자유 모드와 저장된 맵 모두 생존 시간으로 순위를 겨뤄요.
           </p>
-          <button className="zr-btn zr-btn-primary" onClick={() => { setMapId(null); setPlayMode('free'); setStep('create') }}>
-            자유 모드 방 만들기
-          </button>
-          <button className="zr-btn zr-btn-ghost" onClick={() => setStep('create')}>
+          <button className="zr-btn zr-btn-primary" onClick={() => setStep('create')}>
             방 만들기 (방장)
           </button>
           <button className="zr-btn zr-btn-ghost" onClick={() => setStep('join')}>

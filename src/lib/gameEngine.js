@@ -5,6 +5,7 @@ import {
 import { PACE_PRESETS, DEFAULT_PACE_IDX } from './gameConfig.js'
 import { measureMovement, GPS_STALE_MS, HIT_GRACE_MS } from './gameSafety.js'
 import { insideArea } from './playArea.js'
+import { patrolReinforcement } from './routePressure.js'
 
 // Mutable simulation state is owned by App; this module has no React or network effects.
 const REROUTE_INTERVAL_MS = 15000 // 좀비 하나당 최소 이 간격마다만 경로 재요청
@@ -14,6 +15,7 @@ const CATCH_RADIUS_M = 12 // 이 거리 안으로 좀비가 들어오면 붙잡�
 const PICKUP_RADIUS_M = 15 // 이 거리 안으로 걸어가면 아이템 자동 획득
 const FIRST_WAVE_SEC = 60
 const NEXT_WAVE_SEC = 90
+const PATROL_WAVE_SEC = 45
 // 러닝을 재밌게 만드는 게 목적이라 좀비 무리 규모는 적당히만 (한 번에 최대 이 마리 수까지만 동시에 존재)
 const WAVE_SIZE_MIN = 1
 const WAVE_SIZE_MAX = 2
@@ -86,6 +88,9 @@ export function makeInitialGame() {
     headingAnchor: null, // 방향 계산 기준점
     presetMap: null, // 플레이할 때 명시적으로 선택한 좀비 지도
     roomId: null, // 방(그룹) 모드일 때만 채워짐
+    soloId: null,
+    soloConfig: null,
+    soloNickname: null,
     roomPlayerId: null,
     roomNickname: null,
   }
@@ -235,10 +240,28 @@ export function advanceGame(game, dt, now) {
     game.elapsedSec += dt
     const frozen = now < game.frozenUntil
 
-    if (!game.presetMap && game.playerPos && game.elapsedSec >= game.nextWaveSec) {
-      spawnWave(game, now, emit)
-      game.waveCount += 1
-      game.nextWaveSec = game.elapsedSec + NEXT_WAVE_SEC
+    if (game.playerPos && !frozen && game.elapsedSec >= game.nextWaveSec) {
+      if (game.presetMap) {
+        const reinforcement=patrolReinforcement(game,now)
+        if (reinforcement) {
+          const cap=Math.max(MAX_CONCURRENT_ZOMBIES,game.presetMap.routes.length)
+          if (game.zombies.length>=cap) {
+            const distant=game.zombies.reduce((a,b) => haversineDistance(a.lat,a.lon,game.playerPos.lat,game.playerPos.lon)>
+              haversineDistance(b.lat,b.lon,game.playerPos.lat,game.playerPos.lon) ? a : b)
+            if (haversineDistance(distant.lat,distant.lon,game.playerPos.lat,game.playerPos.lon)>50)
+              game.zombies=game.zombies.filter(z=>z.id!==distant.id)
+          }
+          if (game.zombies.length<cap) {
+            game.zombies.push(reinforcement)
+            game.waveCount+=1
+            emit('경로 뒤쪽에 좀비가 다시 등장했어요!')
+          }
+        }
+      } else {
+        spawnWave(game, now, emit)
+        game.waveCount += 1
+      }
+      game.nextWaveSec = game.elapsedSec + (game.presetMap ? PATROL_WAVE_SEC : NEXT_WAVE_SEC)
     }
 
     if (game.playerPos && Math.floor(game.elapsedSec / 70) > Math.floor((game.elapsedSec - dt) / 70) && !game.pickups.some((p) => p.type === 'hourglass')) {
@@ -253,12 +276,14 @@ export function advanceGame(game, dt, now) {
           const { lat, lon, patrolIndex, patrolDir } = stepPatrol(z, dt)
           return { ...z, state: 'patrol', lat, lon, patrolIndex, patrolDir, path: null, chaseHome: null }
         }
-        if (z.path && z.path.length > 1) {
+        const stalePath = z.pathFetchedFor && (
+          now-z.lastRouteAt>20000 || haversineDistance(z.pathFetchedFor.lat,z.pathFetchedFor.lon,game.playerPos.lat,game.playerPos.lon)>35)
+        if (!stalePath && z.path && z.path.length > 1) {
           const { pos, path } = advanceAlongPath(z.path, z.speed * dt)
           return { ...z, lat: pos.lat, lon: pos.lon, path }
         }
         const next = moveToward(z.lat, z.lon, game.playerPos.lat, game.playerPos.lon, z.speed * dt)
-        return { ...z, lat: next.lat, lon: next.lon }
+        return { ...z, lat: next.lat, lon: next.lon, path: null }
       })
 
 

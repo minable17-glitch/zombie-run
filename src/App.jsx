@@ -4,6 +4,8 @@ import ResetPassword from './ResetPassword.jsx'
 import RunBriefing from './RunBriefing.jsx'
 import GameIcon from './GameIcon.jsx'
 import Leaderboard from './Leaderboard.jsx'
+import PersonalBoard from './PersonalBoard.jsx'
+import { startSolo, updateSolo, soloBoard } from './lib/runnerApi.js'
 import { rankPlayers } from './lib/leaderboard.js'
 import { createProximityAlert } from './lib/proximityAlert.js'
 import { createRoomReporter } from './lib/roomReporter.js'
@@ -19,9 +21,10 @@ import { readRoom, updateRoomStat } from './lib/roomApi.js'
 import { readFix, GPS_STALE_MS } from './lib/gameSafety.js'
 import { isLocalTestMode, makeTestPosition } from './lib/testMode.js'
 import { insideArea } from './lib/playArea.js'
+import { usableChasePath } from './lib/routePressure.js'
 import {
   makeInitialGame, applyStartSetup, advanceGame, updatePosition, findRouteCandidate,
-  closestRouteIndex, formatTime, formatPace, START_HEALTH,
+  formatTime, formatPace, START_HEALTH,
   LIVE_PACE_MIN_WINDOW_SEC, ROOM_STAT_PUSH_SEC, ROOM_TEAMMATES_POLL_MS,
 } from './lib/gameEngine.js'
 
@@ -35,6 +38,7 @@ const loadGameMap = async () => {
 }
 const AdminRouteEditor = lazy(() => import('./AdminRouteEditor.jsx'))
 const RoomLobby = lazy(() => import('./RoomLobby.jsx'))
+const PersonalRunner = lazy(() => import('./PersonalRunner.jsx'))
 const loadingScreen = <div className="zr-screen zr-start"><p role="status">화면을 불러오는 중…</p></div>
 
 export default function App() {
@@ -71,6 +75,8 @@ function GameApp() {
   const rankingPollRef = useRef(null)
   const [rankingError, setRankingError] = useState('')
   const [saveState, setSaveState] = useState('')
+  const [personalBoard, setPersonalBoard] = useState(null)
+  const [personalResult, setPersonalResult] = useState(null)
   const [vibrationOn, setVibrationOn] = useState(true)
   const vibrationEnabled = useRef(true)
   const proximityRef = useRef(null)
@@ -163,7 +169,7 @@ function GameApp() {
       game.gameOverReason = reason
       clearInterval(tickIntervalRef.current)
       proximityRef.current.stop()
-      if (game.roomId) {
+      if (game.roomId || game.soloId) {
         setSaveState('saving')
         reporterRef.current?.submit({ distance: game.distance, health: game.health,
           elapsed: game.elapsedSec, status: reason === 'manual' ? 'finished' : 'caught' })
@@ -205,18 +211,18 @@ function GameApp() {
           if (game.runId !== runId || game.status !== "playing") return
           game.zombies = game.zombies.map((z) => {
             if (z.id !== targetId) return z
-            if (path && (!z.patrolRoute || z.state === 'chase')) {
-              const nearest = closestRouteIndex(path, z)
-              return { ...z, path: [{ lat: z.lat, lon: z.lon }, ...path.slice(nearest + 1)],
+            const usable = usableChasePath(path,z,game.playerPos)
+            if (usable && !z.patrolRoute) {
+              return { ...z, path: usable,
                 pathFetchedFor: targetPos, lastRouteAt: Date.now(), routing: false }
             }
-            return { ...z, routing: false, pathFetchedFor: targetPos, lastRouteAt: Date.now() }
+            return { ...z, path: null, routing: false, pathFetchedFor: targetPos, lastRouteAt: Date.now() }
           })
           rerender()
         })
       }
 
-    if (game.roomId && now - game.lastStatAt >= ROOM_STAT_PUSH_SEC * 1000) {
+    if ((game.roomId || game.soloId) && now - game.lastStatAt >= ROOM_STAT_PUSH_SEC * 1000) {
       game.lastStatAt = now
       reporterRef.current?.submit({ distance: game.distance, health: game.health, elapsed: game.elapsedSec, status: 'alive' })
     }
@@ -250,14 +256,18 @@ function GameApp() {
   }, [])
 
   const pollTeammates = useCallback(async () => {
-    if (!supabase || !game.roomId) return
+    if (!supabase || (!game.roomId && !game.soloId)) return
     const runId = game.runId
     if (rankingPollRef.current === runId) return
     rankingPollRef.current = runId
     reporterRef.current?.retry()
     try {
-      const result = await readRoom(game.roomId)
-      if (game.runId === runId) { setTeammates(result.players); setRankingError('') }
+      const result = game.roomId ? await readRoom(game.roomId) : await soloBoard(game.soloConfig)
+      if (game.runId === runId) {
+        if (game.roomId) setTeammates(result.players)
+        else setPersonalBoard(result)
+        setRankingError('')
+      }
     } catch {
       if (game.runId === runId) setRankingError('연결 지연 · 마지막으로 확인한 순위예요. 자동으로 다시 연결합니다.')
     } finally {
@@ -285,7 +295,7 @@ function GameApp() {
         }
         resolve(false)
       }
-      const beginWithPosition = position => {
+      const beginWithPosition = async position => {
         if (request !== startRequestRef.current) return resolve(false)
         const gpsStartPos = readFix(position)
         if (!gpsStartPos) return fail('GPS 신호가 부정확해요. 야외에서 다시 시작해주세요.')
@@ -296,6 +306,14 @@ function GameApp() {
           : gpsStartPos
         if (!isLocalTestMode() && forcedMap && !insideArea(startPos, forcedMap.center, forcedMap.radius, forcedMap.boundary))
           return fail('방장이 선택한 지도 구역 안으로 이동한 뒤 다시 시도해주세요.')
+        let soloId = null
+        if (session?.soloRunner && !isLocalTestMode()) {
+          try {
+            soloId = crypto.randomUUID()
+            await startSolo(soloId, config)
+          } catch (e) { return fail(e.message) }
+          if (request !== startRequestRef.current) return resolve(false)
+        }
         clearInterval(tickIntervalRef.current)
         clearInterval(teammatesPollRef.current)
         reporterRef.current?.dispose()
@@ -305,12 +323,16 @@ function GameApp() {
         setShowTeammates(false)
         setRankingError('')
         setSaveState('')
+        setPersonalBoard(null)
+        setPersonalResult(null)
         if (watchIdRef.current != null) navigator.geolocation.clearWatch(watchIdRef.current)
         Object.assign(game, makeInitialGame(), {
           status: 'playing', playerPos: startPos, lastPos: startPos, lastFix: startPos,
           movementAnchor: startPos, lastTickAt: Date.now(),
           roomId: session?.roomId ?? null, roomPlayerId: session?.playerId ?? null,
           roomNickname: session?.nickname ?? null,
+          soloId, soloConfig: soloId ? { ...config } : null,
+          soloNickname: session?.soloRunner?.nickname ?? null,
         })
         const matched = applyStartSetup(game, startPos, {
           paceMps: (PACE_PRESETS[config.paceIdx] ?? PACE_PRESETS[DEFAULT_PACE_IDX]).mps,
@@ -333,15 +355,20 @@ function GameApp() {
             { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 })
           tickIntervalRef.current = setInterval(tick, 1000)
         }
-        if (session) {
+        if (session?.roomId || soloId) {
           const runId = game.runId
           reporterRef.current = createRoomReporter(
-            s => updateRoomStat(session.roomId, s.distance, s.health, s.status, s.elapsed),
+            async s => {
+              if (soloId) {
+                const result = await updateSolo(soloId, s)
+                if (game.runId === runId && s.status !== 'alive') setPersonalResult(result)
+              } else await updateRoomStat(session.roomId, s.distance, s.health, s.status, s.elapsed)
+            },
             s => { if (game.runId === runId) { setSaveState(s.status === 'alive' ? '' : 'saved'); void pollTeammates() } },
             () => { if (game.runId === runId) setSaveState('error') },
           )
           pollTeammates()
-          teammatesPollRef.current = setInterval(pollTeammates, ROOM_TEAMMATES_POLL_MS)
+          teammatesPollRef.current = setInterval(pollTeammates, soloId ? 10000 : ROOM_TEAMMATES_POLL_MS)
         }
         startingRef.current = false
         setStarting(false)
@@ -384,8 +411,10 @@ function GameApp() {
     }
   }, [mode])
 
-  const requestLocationAndStart = useCallback(() =>
-    startRun({ paceIdx, playMode, radiusIdx }), [startRun, paceIdx, playMode, radiusIdx])
+  const requestLocationAndStart = useCallback(() => {
+    if (supabase && !isLocalTestMode()) { setGeoError(''); setMode('personal'); return }
+    return startRun({ paceIdx, playMode, radiusIdx })
+  }, [startRun, paceIdx, playMode, radiusIdx, setMode])
 
   const finishRun = useCallback(() => endGame('manual'), [endGame])
 
@@ -452,6 +481,15 @@ function GameApp() {
         session={adminSession}
       />
     )
+  }
+
+  if (mode === 'personal') {
+    return <PersonalRunner config={{paceIdx,playMode,radiusIdx}} onBack={() => setMode('game')} startError={geoError}
+      onStart={async (config, session) => {
+        const started = await startRun(config, session)
+        if (started) setMode('game')
+        return started
+      }} />
   }
 
   if (mode === 'room') {
@@ -533,11 +571,13 @@ function GameApp() {
             <GameIcon name="run" size={21} />
             <span>{starting ? '위치 확인 중…' : isLocalTestMode() ? '테스트 위치로 시작' : '생존 러닝 시작'}</span>
           </button>
-          <button className="zr-btn zr-btn-ghost" disabled={starting} onClick={() => setMode('room')}>
+          {supabase && <button className="zr-btn zr-btn-ghost" disabled={starting} onClick={() => { setGeoError(''); setMode('personal') }}>내 기록 · 전체 랭킹</button>}
+          <p className="zr-mode-description">닉네임과 개인 코드로 나의 기록을 이어가세요. 방 없이 혼자 출발합니다.</p>
+          <button className="zr-btn zr-btn-ghost" disabled={starting} onClick={() => { refreshZombieMaps(); setMode('room') }}>
             <GameIcon name="users" size={20} />
             <span>그룹 러닝 · 닉네임 / 코드</span>
           </button>
-          <p className="zr-mode-description">자유 모드도 닉네임과 방 코드로 함께 참가하고, 생존 랭킹을 겨뤄보세요.</p>
+          <p className="zr-mode-description">함께 뛸 때는 방 코드로 참가하세요. 다른 사람이 만든 맵도 선택할 수 있어요.</p>
           <p className="zr-location-note">{typeof navigator.vibrate === 'function' ? '좀비 70m 이내 접근 시 진동 · 게임 중 끄기 가능' : '이 브라우저는 진동을 지원하지 않아 화면으로 경고해요.'}</p>
           <button className="zr-admin-link" disabled={starting} onClick={() => setMode('admin')}>
             <GameIcon name="route" size={18} />
@@ -578,6 +618,12 @@ function GameApp() {
             {saveState !== 'saved' && <p className="zr-ranking-note">저장되기 전에 나가면 최종 기록이 누락될 수 있어요.</p>}
             <Leaderboard players={teammates} playerId={game.roomPlayerId} error={rankingError} />
           </>}
+          {game.soloId && <>
+            <p role="status" className="zr-ranking-note">{saveState === 'saved' ? '내 기록 저장 완료' : saveState === 'error' ? '기록 저장 재시도 중 · 이 화면을 유지해주세요.' : '내 기록 저장 중…'}</p>
+            {saveState !== 'saved' && <p className="zr-ranking-note">저장 전에 나가면 이번 기록이 누락될 수 있어요.</p>}
+            <PersonalBoard board={personalBoard} config={game.soloConfig} result={personalResult} error={rankingError} />
+          </>}
+          {isLocalTestMode() && <p className="zr-ranking-note">가상 위치 테스트 · 개인 전체 랭킹에는 저장하지 않습니다.</p>}
           <button className="zr-btn zr-btn-primary" onClick={restart} disabled={starting}>
             {starting ? '위치 확인 중…' : game.roomId ? '혼자 다시 도전하기' : '다시 도전하기'}
           </button>
@@ -688,6 +734,7 @@ function GameApp() {
             <GameIcon name="users" size={18} /> <span>{rankPlayers(teammates).find(p => p.id === game.roomPlayerId)?.rank ?? '—'}위</span>
           </button>
         )}
+        {game.soloId && <button className="zr-badge" aria-label="내 최고 기록과 전체 랭킹" aria-expanded={showTeammates} onClick={() => setShowTeammates(v => !v)}>{personalBoard?.me ? `${personalBoard.me.rank}위` : '기록'}</button>}
         {typeof navigator.vibrate === 'function' && <button className="zr-badge" aria-label="좀비 접근 진동" aria-pressed={vibrationOn} onClick={toggleVibration}>진동<br />{vibrationOn ? 'ON' : 'OFF'}</button>}
       </div>
 
@@ -702,6 +749,10 @@ function GameApp() {
           <Leaderboard players={teammates} playerId={game.roomPlayerId} error={rankingError || (saveState === 'error' ? '내 기록 전송을 재시도하고 있어요.' : '')} />
         </div>
       )}
+      {game.soloId && showTeammates && <div className="zr-teammates-panel">
+        <div className="zr-teammates-header"><span>{game.soloNickname} · 개인 랭킹</span><button className="zr-round-btn" aria-label="랭킹 닫기" onClick={() => setShowTeammates(false)}><GameIcon name="close" size={18} /></button></div>
+        <PersonalBoard board={personalBoard} config={game.soloConfig} error={rankingError} />
+      </div>}
 
       <div className="zr-banner-stack">
         {Date.now() < game.invulnerableUntil && <div role="status" className="zr-banner zr-banner-blue"><GameIcon name="shield" size={17} /> 보호 시간 · 거리를 벌리세요</div>}

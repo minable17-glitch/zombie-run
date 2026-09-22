@@ -3,7 +3,7 @@ import { beforeAll, afterAll, test, expect } from 'vitest'
 import { PGlite } from '@electric-sql/pglite'
 import { readFileSync } from 'node:fs'
 
-const migration = ['20260909140000_zombie_run_security.sql', '20260910010000_room_expiration.sql', '20260911030000_legacy_profile_lookup.sql', '20260916010000_map_boundary.sql', '20260921010000_room_survival_rank.sql']
+const migration = ['20260909140000_zombie_run_security.sql', '20260910010000_room_expiration.sql', '20260911030000_legacy_profile_lookup.sql', '20260916010000_map_boundary.sql', '20260921010000_room_survival_rank.sql', '20260922010000_personal_survival.sql']
   .map(name => readFileSync('supabase/migrations/' + name, 'utf8').replace(/^\uFEFF/, '').trim()).join('\n\n')
 const ids = {
   host: '00000000-0000-4000-8000-000000000001',
@@ -186,4 +186,65 @@ test('survival stats are room-private, bounded, monotonic and immutable after fi
   await asUser(ids.stranger, "select zr_update_stat_v2($1,99999,6,'alive',80000)", [room])
   expect((await asUser(ids.stranger, 'select zr_read_room($1) result', [room])).rows[0].result.players[0]).toEqual(final)
   await expect(asUser(ids.host, 'select zr_read_room($1)', [room])).rejects.toThrow()
+})
+
+test('personal codes restore identity across devices without exposing codes or other histories', async () => {
+  const a = (await asUser(ids.host, "select zr_runner_connect('Solo A',null) result")).rows[0].result
+  expect(a.code).toMatch(/^[A-F0-9]{20}$/)
+  expect((await asUser(ids.member,"select zr_runner_connect('Solo A','wrong') result")).rows[0].result.error).toBeTruthy()
+  expect((await asUser(ids.member,'select zr_runner_me() result')).rows[0].result).toBeNull()
+  const restored = (await asUser(ids.stranger,'select zr_runner_connect($1,$2) result',['Solo A',a.code.match(/.{4}/g).join('-').toLowerCase()])).rows[0].result
+  expect(restored.runner).toEqual(a.runner)
+  expect(restored.code).toBeNull()
+  expect((await asUser(ids.stranger,'select zr_runner_me() result')).rows[0].result).toEqual(a.runner)
+  await expect(asUser(ids.host,'select code_hash from zr_private.runners')).rejects.toThrow(/permission denied/)
+  await asUser(ids.stranger,'select zr_runner_disconnect()')
+  expect((await asUser(ids.stranger,'select zr_runner_me() result')).rows[0].result).toBeNull()
+  expect((await asUser(ids.host,'select zr_runner_me() result')).rows[0].result).toEqual(a.runner)
+})
+
+test('personal bests, competing ranks, difficulty separation and idempotent finish use real SQL', async () => {
+  await asUser(ids.member,"select zr_runner_connect('Solo B',null)")
+  const runA='10000000-0000-4000-8000-000000000001', runA2='10000000-0000-4000-8000-000000000002', runB='10000000-0000-4000-8000-000000000003'
+  const start = (user,id,pace=1) => asUser(user,"select zr_solo_start($1,'free',$2,1) result",[id,pace])
+  const finish = (user,id,elapsed,distance) => asUser(user,"select zr_solo_update($1,$2,$3,'finished') result",[id,elapsed,distance])
+  await start(ids.host,runA)
+  await expect(start(ids.host,runA2)).rejects.toThrow(/진행 중/)
+  await expect(finish(ids.member,runA,100,100)).rejects.toThrow()
+  await db.query("update zr_private.solo_runs set started_at=now()-interval '100 seconds' where id=$1",[runA])
+  const first=(await finish(ids.host,runA,60,100)).rows[0].result
+  expect(first).toMatchObject({elapsed_sec:60,distance_m:100,is_best:true,previous_sec:null})
+  expect((await finish(ids.host,runA,90,200)).rows[0].result).toEqual(first)
+  await start(ids.host,runA2)
+  await db.query("update zr_private.solo_runs set started_at=now()-interval '100 seconds' where id=$1",[runA2])
+  const improved=(await finish(ids.host,runA2,80,120)).rows[0].result
+  expect(improved).toMatchObject({is_best:true,previous_sec:60})
+  await start(ids.member,runB)
+  await db.query("update zr_private.solo_runs set started_at=now()-interval '100 seconds' where id=$1",[runB])
+  await finish(ids.member,runB,90,100)
+  const board=(await asUser(ids.host,"select zr_solo_board('free',1,1) result")).rows[0].result
+  expect(board.total).toBe(2)
+  expect(board.me).toMatchObject({nickname:'Solo A',rank:2,elapsed_sec:80})
+  expect(board.players.map(p=>p.nickname)).toEqual(['Solo B','Solo A'])
+  expect(board.recent).toHaveLength(2)
+  expect(JSON.stringify(board)).not.toMatch(/code_hash|auth_user_id|runner_id/)
+  expect((await asUser(ids.host,"select zr_solo_board('free',0,1) result")).rows[0].result.total).toBe(0)
+  expect((await asUser(ids.member,"select zr_solo_board('free',1,1) result")).rows[0].result.recent).toHaveLength(1)
+})
+
+test('personal login attempts remain rate limited after wrong codes', async () => {
+  for(let i=0;i<30;i++) await asUser(ids.stranger,"select zr_runner_connect('Solo A','bad')")
+  const response=(await asUser(ids.stranger,"select zr_runner_connect('Solo A','bad') result")).rows[0].result
+  expect(response.error).toMatch(/접속 시도가 많아요/)
+})
+
+test('a different map owner can share a map for a host to select and start', async () => {
+  const map=(await asUser(ids.account,
+    'insert into zombie_maps(name,center_lat,center_lon,radius_m,routes,owner_id) values($1,37,127,400,$2,$3) returning id',
+    ['공유 테스트',[[{lat:37,lon:127},{lat:37.001,lon:127}]],ids.account])).rows[0]
+  expect((await asUser(ids.member,'select id from zombie_maps where id=$1',[map.id])).rows).toHaveLength(1)
+  const room=(await asUser(ids.member,"select zr_create_room('공유 맵 방장',$1) result",[{mapId:map.id,paceIdx:1}])).rows[0].result.room
+  const started=(await asUser(ids.member,'select zr_start_room($1) result',[room.id])).rows[0].result
+  expect(started.config.mapId).toBe(map.id)
+  expect((await asUser(ids.member,'update zombie_maps set name=$1 where id=$2 returning id',['변경 불가',map.id])).rows).toHaveLength(0)
 })
