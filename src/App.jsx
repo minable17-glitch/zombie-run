@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import AuthScreen from './AuthScreen.jsx'
 import ResetPassword from './ResetPassword.jsx'
 import RunBriefing from './RunBriefing.jsx'
+import RunDisplay from './RunDisplay.jsx'
 import GameIcon from './GameIcon.jsx'
 import Leaderboard from './Leaderboard.jsx'
 import PersonalBoard from './PersonalBoard.jsx'
@@ -769,6 +770,7 @@ function GameApp() {
       </div>
       {toastMsg && <div className="zr-toast" role="status" aria-live="polite">{toastMsg}</div>}
 
+      <RunDisplay elapsed={game.elapsedSec} distance={game.distance} nearest={nearestZombieDist} paused={gpsPaused} />
       <div className="zr-hud-bottom">
         <button className="zr-map-control" aria-label="내 위치 자동 추적" aria-pressed={follow} onClick={() => setFollow((f) => !f)}>
           <GameIcon name={follow ? 'locate' : 'map'} size={21} />
