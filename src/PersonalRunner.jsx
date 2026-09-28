@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { currentRunner, connectRunner, disconnectRunner, soloBoard, changeRunnerCode } from './lib/runnerApi.js'
 import PersonalBoard from './PersonalBoard.jsx'
+import SchoolLink from './SchoolLink.jsx'
 
 export default function PersonalRunner({ config: baseConfig, zombieMaps = [], onStart, onBack, startError }) {
   const [mapId, setMapId] = useState('')
@@ -104,6 +105,7 @@ export default function PersonalRunner({ config: baseConfig, zombieMaps = [], on
       <button className="zr-btn zr-btn-primary" disabled={busy || Boolean(newCode && !savedCode)} onClick={start}>{busy ? '출발 준비 중…' : '생존 러닝 출발'}</button>
       <PersonalBoard board={board} config={config} error={boardError} />
       <button className="zr-btn zr-btn-ghost" disabled={busy} onClick={refreshBoard}>랭킹 새로고침</button>
+      <SchoolLink runner={runner} />
       <button className="zr-admin-link" disabled={busy} onClick={async () => {
         if (lock.current) return
         lock.current = true; setBusy(true)
