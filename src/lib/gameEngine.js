@@ -34,6 +34,12 @@ const OUTSIDE_AREA_HEART_LOSS_MS = 60 * 60 * 1000 // 제한구역 밖에서 누�
 export const ROOM_STAT_PUSH_SEC = 5 // 이 간격마다 내 상태를 방에 올림
 export const ROOM_TEAMMATES_POLL_MS = 5000 // 이 간격마다 다른 참가자 상태를 새로 받아옴
 
+// 학교 행사(매 1런) 연동 러너 전용 "잠깐 멈추기" — 매 1런 자체 앱과 같은 신호등 규칙을 맞추기 위함.
+// 연동 안 한 일반 플레이에는 적용하지 않음(game.schoolLinked로 구분).
+export const SCHOOL_PAUSE_BUDGET_SEC = 180 // 1km 구간마다 주어지는 멈춤 예산(초)
+export const SCHOOL_PAUSE_AUTO_RESUME_MS = 60000 // 한 번 멈추면 예산이 남아 있어도 이 시간 뒤엔 자동으로 다시 달리기
+const SCHOOL_PAUSE_SEGMENT_M = 1000
+
 // 방향이 중구난방이면 "러닝"이 아니게 되니까, 좀비는 항상 지금 달리는 방향의 뒤쪽에서만 등장시켜서
 // 도망치는 방법이 "그냥 계속 앞으로 달리기" 하나로 정해지게 함. 아이템은 반대로 앞쪽에 놓아서
 // 계속 전진할 동기를 줌
@@ -95,6 +101,12 @@ export function makeInitialGame() {
     soloNickname: null,
     roomPlayerId: null,
     roomNickname: null,
+    schoolLinked: false, // 학교연동(매 1런) 러너의 생존 러닝일 때만 아래 멈춤 예산이 동작함
+    pauseSegment: 0, // 지금 멈춤 예산을 계산한 1km 구간 (Math.floor(distance/1000))
+    pauseBudgetSec: SCHOOL_PAUSE_BUDGET_SEC, // 이번 구간에서 남은 멈춤 예산(초)
+    paused: false, // 지금 "잠깐 멈추기" 중인지
+    pausedAt: 0, // 멈춘 시작 시각(ms) — paused가 true일 때만 의미 있음(0시각의 멈춤과 구분하려고 별도 플래그를 둠)
+    pauseAutoResumeAt: 0, // 멈춰 있는 동안 자동으로 다시 달리기를 시작할 시각(ms)
   }
 }
 
@@ -399,9 +411,10 @@ export function findRouteCandidate(game, now) {
 }
 
 export function updatePosition(game, fix, now) {
+    const paused = game.paused
     const movement = measureMovement(game.movementAnchor, fix)
     const gap = !game.lastFix || fix.t - game.lastFix.t > GPS_STALE_MS
-    if (!gap && movement) game.distance += movement
+    if (!gap && movement && !paused) game.distance += movement
     if (gap || movement || !game.movementAnchor || fix.t - game.movementAnchor.t > GPS_STALE_MS)
       game.movementAnchor = fix
     game.lastFix = fix
@@ -417,5 +430,57 @@ export function updatePosition(game, fix, now) {
       game.headingDeg = bearingTo(game.headingAnchor.lat, game.headingAnchor.lon, fix.lat, fix.lon)
       game.headingAnchor = fix
     }
+    syncPauseSegment(game)
+}
 
+// 온전한 1km를 새로 넘길 때마다 멈춤 예산을 180초로 다시 채움 (남은 예산은 다음 구간으로 이어가지 않음)
+function syncPauseSegment(game) {
+  const segment = Math.floor(game.distance / SCHOOL_PAUSE_SEGMENT_M)
+  if (segment !== game.pauseSegment) {
+    game.pauseSegment = segment
+    game.pauseBudgetSec = SCHOOL_PAUSE_BUDGET_SEC
+  }
+}
+
+// 학교연동 러너만 "잠깐 멈추기"를 쓸 수 있음. 멈춰 있는 동안은 tick에서 advanceGame/updatePosition의
+// 시간·거리 누적을 건너뛰어서 좀비·시간·거리가 전부 그대로 멈춤.
+export function startPause(game, now) {
+  if (!game.schoolLinked || game.status !== 'playing' || game.paused || game.pauseBudgetSec <= 0) return false
+  game.paused = true
+  game.pausedAt = now
+  game.pauseAutoResumeAt = now + SCHOOL_PAUSE_AUTO_RESUME_MS
+  return true
+}
+
+export function endPause(game, now) {
+  if (!game.paused) return false
+  const spent = Math.min(game.pauseBudgetSec, (now - game.pausedAt) / 1000)
+  game.pauseBudgetSec = Math.max(0, game.pauseBudgetSec - spent)
+  game.paused = false
+  game.pausedAt = 0
+  game.pauseAutoResumeAt = 0
+  return true
+}
+
+// tick마다 호출: 예산을 다 썼거나 60초가 지났으면 자동으로 다시 달리기로 되돌리고 true를 반환함
+export function checkPauseAutoResume(game, now) {
+  if (!game.paused) return false
+  const spent = (now - game.pausedAt) / 1000
+  if (now >= game.pauseAutoResumeAt || spent >= game.pauseBudgetSec) {
+    endPause(game, now)
+    return true
+  }
+  return false
+}
+
+// 화면 표시용 — 상태를 바꾸지 않고 지금 남은 멈춤 예산과 자동 재개까지 남은 시간을 계산함
+export function pauseStatus(game, now) {
+  const active = game.paused
+  const elapsed = active ? (now - game.pausedAt) / 1000 : 0
+  return {
+    active,
+    remainingBudgetSec: Math.max(0, Math.round(game.pauseBudgetSec - elapsed)),
+    autoResumeInSec: active ? Math.max(0, Math.ceil((game.pauseAutoResumeAt - now) / 1000)) : 0,
+    segmentKm: game.pauseSegment + 1,
+  }
 }

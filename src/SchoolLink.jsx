@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react'
 import { linkSchoolAccount } from './lib/schoolLinkApi.js'
+import { linkSchoolRunner } from './lib/runnerApi.js'
 
-export default function SchoolLink({ runner }) {
+export default function SchoolLink({ runner, onLinked }) {
   const [open, setOpen] = useState(false)
   const [studentNumber, setStudentNumber] = useState('')
   const [name, setName] = useState('')
@@ -22,6 +23,8 @@ export default function SchoolLink({ runner }) {
       })
       setLinked(data)
       setPin('')
+      // 매 1런 쪽 연동은 이미 성공했으니, 우리 쪽 표시 갱신이 실패해도 사용자에게는 성공으로 보여줌
+      try { onLinked?.(await linkSchoolRunner()) } catch { /* 다음 접속 때 다시 연동하면 채워짐 */ }
     } catch (e) { setError(e.message) }
     finally { lock.current = false; setBusy(false) }
   }

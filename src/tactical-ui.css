@@ -670,6 +670,17 @@ a:focus-visible,
   background: rgba(50, 13, 14, .95);
 }
 
+.zr-game-shell .zr-banner.zr-school-pause {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+}
+
+.zr-game-shell .zr-banner.zr-school-pause .zr-btn {
+  align-self: stretch;
+  justify-content: center;
+}
+
 .zr-game-shell .zr-toast {
   position: absolute;
   bottom: calc(82px + env(safe-area-inset-bottom));

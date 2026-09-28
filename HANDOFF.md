@@ -4,7 +4,15 @@
 
 ## 1. 마지막 작업과 다음 단계
 
-- 마지막 기능은 러닝 중 자동 화면 꺼짐 방지와 러닝 현황 PIP였다. 웹 기능은 커밋 `6c32b91`로 main에 push했고 GitHub Pages Actions `36216380656`의 성공을 확인했다. 공개 사이트: https://minable17-glitch.github.io/zombie-run/
+- 가장 최근 작업은 학교 행사(매 1런) 연동 러너 전용 "잠깐 멈추기"다. 매 1런 자체 앱과 같은 규칙(1km당 180초 멈춤 예산,
+  60초 뒤 자동 재개, 온전한 1km를 넘길 때만 재충전, 연동 안 한 일반 플레이는 그대로)을 구현했다.
+  `src/lib/gameEngine.js`의 `startPause/endPause/checkPauseAutoResume/pauseStatus`와 `App.jsx`의 `tick()` 초반 분기(멈춰 있으면
+  `advanceGame`을 아예 건너뜀)로 시간·거리·좀비를 동시에 멈춘다. DB에는 `zr_private.runners.school_linked_at`을 추가하고
+  `zr_runner_school_link()` RPC와 갱신된 `zr_runner_me()`로 다른 기기/세션에서도 연동 상태가 이어지게 했다.
+  **운영 SQL Editor에 `20260928020000_school_pause_state.sql`을 아직 적용하지 않았다.** 적용 전에는 `zr_runner_me()`가
+  `schoolLinkedAt`을 반환하지 않아 이 기능이 서버 쪽에서 절대 켜지지 않는다(안전한 기본 상태). 로컬 PGlite 자동 테스트와
+  프로덕션 빌드만 통과했고, 실제 휴대폰으로 신호등 앞에서 버튼을 눌러 확인하지는 않았다.
+- 그 이전 기능은 러닝 중 자동 화면 꺼짐 방지와 러닝 현황 PIP였다. 웹 기능은 커밋 `6c32b91`로 main에 push했고 GitHub Pages Actions `36216380656`의 성공을 확인했다. 공개 사이트: https://minable17-glitch.github.io/zombie-run/
 - 화면 유지 요청 성공, 390×844 화면에서 제어 패널 표시, PIP 영상 준비와 실패 안내를 브라우저에서 확인했다. **실제 PIP 창이 뜨는 데 성공한 것은 아니다.** Codex 내장 브라우저는 지원 API를 노출했으나 창 열기 요청을 거절했다.
 - 사용자가 진짜 원하는 것은 “휴대폰 화면을 완전히 꺼도 GPS·좀비 추격이 계속되고, 다른 앱 사용 중 작은 창으로 현황을 보는 것”이다. Android와 iPhone 둘 다 원한다고 답했다. 지금 웹 배포는 이 요구 전체를 충족하지 않는다.
 - **설치형 Android/iOS 앱은 아직 만들지 않았다.** 백그라운드 추적, 백그라운드 게임 진행, 네이티브 PIP, 앱 서명, 스토어 등록 모두 미완료다. 웹사이트를 단순히 앱으로 감싸는 것만으로 해결된다고 설명하지 말 것.

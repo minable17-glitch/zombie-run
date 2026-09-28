@@ -1,5 +1,8 @@
 import { test, expect } from 'vitest'
-import { advanceGame, applyStartSetup, makeInitialGame, updatePosition, summonFirstWave, turnAround } from '../src/lib/gameEngine.js'
+import {
+  advanceGame, applyStartSetup, makeInitialGame, updatePosition, summonFirstWave, turnAround,
+  startPause, endPause, checkPauseAutoResume, pauseStatus, SCHOOL_PAUSE_BUDGET_SEC, SCHOOL_PAUSE_AUTO_RESUME_MS,
+} from '../src/lib/gameEngine.js'
 import { haversineDistance } from '../src/lib/geo.js'
 import { insidePolygon } from '../src/lib/playArea.js'
 
@@ -172,4 +175,62 @@ test('a GPS reconnect clears an old bearing until new movement establishes direc
   updatePosition(game, { lat: 37.001, lon: 127, t: 20000, accuracy: 5 }, 20000)
   expect(game.headingDeg).toBeNull()
   expect(game.distance).toBe(0)
+})
+
+test('school-linked pause is unavailable for regular play and follows the school app rules once linked', () => {
+  const game = playing()
+  expect(startPause(game, 0)).toBe(false) // not a school-linked runner
+  game.schoolLinked = true
+  expect(pauseStatus(game, 0)).toMatchObject({ active: false, remainingBudgetSec: SCHOOL_PAUSE_BUDGET_SEC, segmentKm: 1 })
+  expect(startPause(game, 0)).toBe(true)
+  expect(startPause(game, 1000)).toBe(false) // already paused
+  expect(pauseStatus(game, 30000)).toMatchObject({ active: true, remainingBudgetSec: SCHOOL_PAUSE_BUDGET_SEC - 30 })
+  expect(endPause(game, 30000)).toBe(true)
+  expect(game.pausedAt).toBe(0)
+  expect(game.pauseBudgetSec).toBe(SCHOOL_PAUSE_BUDGET_SEC - 30)
+  expect(endPause(game, 40000)).toBe(false) // nothing to end
+})
+
+test('school-linked pause budget refills on a full km and never carries a remainder over', () => {
+  const game = playing()
+  game.schoolLinked = true
+  game.distance = 950
+  game.pauseBudgetSec = 10 // partially spent in this segment
+  updatePosition(game, { lat: 37, lon: 127, t: 1000, accuracy: 5 }, 1000) // still inside the same km
+  expect(game.pauseBudgetSec).toBe(10)
+  expect(pauseStatus(game, 1000).segmentKm).toBe(1)
+  game.distance = 1005 // crosses the 1km mark
+  updatePosition(game, { lat: 37, lon: 127, t: 2000, accuracy: 5 }, 2000)
+  expect(game.pauseBudgetSec).toBe(SCHOOL_PAUSE_BUDGET_SEC) // refilled, not the old remainder
+  expect(pauseStatus(game, 2000).segmentKm).toBe(2)
+})
+
+test('a paused school-linked runner does not accumulate distance until resumed', () => {
+  const game = playing()
+  game.schoolLinked = true
+  game.movementAnchor = { lat: 37, lon: 127, t: 0, accuracy: 5 }
+  game.lastFix = { lat: 37, lon: 127, t: 0, accuracy: 5 }
+  startPause(game, 1000)
+  updatePosition(game, { lat: 37.00045, lon: 127, t: 6000, accuracy: 5 }, 6000) // ~50m of real movement, but paused
+  expect(game.distance).toBe(0)
+  endPause(game, 6000)
+  updatePosition(game, { lat: 37.0009, lon: 127, t: 12000, accuracy: 5 }, 12000) // another ~50m, now resumed
+  expect(game.distance).toBeGreaterThan(0)
+})
+
+test('the pause auto-resumes once its budget or the 60s cap runs out, whichever comes first', () => {
+  const capped = playing()
+  capped.schoolLinked = true
+  startPause(capped, 0)
+  expect(checkPauseAutoResume(capped, SCHOOL_PAUSE_AUTO_RESUME_MS - 1000)).toBe(false)
+  expect(checkPauseAutoResume(capped, SCHOOL_PAUSE_AUTO_RESUME_MS)).toBe(true)
+  expect(capped.pausedAt).toBe(0)
+
+  const drained = playing()
+  drained.schoolLinked = true
+  drained.pauseBudgetSec = 20
+  startPause(drained, 0)
+  expect(checkPauseAutoResume(drained, 19000)).toBe(false)
+  expect(checkPauseAutoResume(drained, 20000)).toBe(true)
+  expect(drained.pauseBudgetSec).toBe(0)
 })

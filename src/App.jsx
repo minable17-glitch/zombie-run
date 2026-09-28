@@ -27,6 +27,7 @@ import {
   makeInitialGame, applyStartSetup, advanceGame, updatePosition, findRouteCandidate, summonFirstWave, turnAround,
   formatTime, formatPace, START_HEALTH,
   LIVE_PACE_MIN_WINDOW_SEC, ROOM_STAT_PUSH_SEC, ROOM_TEAMMATES_POLL_MS,
+  startPause, endPause, checkPauseAutoResume, pauseStatus,
 } from './lib/gameEngine.js'
 
 // OpenRouteService 키가 있으면 좀비가 실제 도로/인도 경로를 따라 쫓아오고,
@@ -191,6 +192,12 @@ function GameApp() {
       rerender()
       return
     }
+    if (checkPauseAutoResume(game, now)) toast('멈춤 예산을 다 써서 자동으로 다시 달리기를 시작했어요.')
+    if (game.paused) {
+      proximityRef.current.stop()
+      rerender()
+      return
+    }
     const result = advanceGame(game, dt, now)
     result.messages.forEach(toast)
     if (result.endReason) {
@@ -335,6 +342,7 @@ function GameApp() {
           roomNickname: session?.nickname ?? null,
           soloId, soloConfig: soloId ? { ...config } : null,
           soloNickname: session?.soloRunner?.nickname ?? null,
+          schoolLinked: Boolean(session?.soloRunner?.schoolLinkedAt),
         })
         const matched = applyStartSetup(game, startPos, {
           paceMps: (PACE_PRESETS[config.paceIdx] ?? PACE_PRESETS[DEFAULT_PACE_IDX]).mps,
@@ -663,6 +671,7 @@ function GameApp() {
   const runLabel = game.presetMap?.name || (game.playMode === 'restricted' ? 'BOUNDARY RUN' : 'FREE RUN')
   const gpsPaused = Boolean(geoError)
   const currentWave = Math.max(1, game.waveCount)
+  const schoolPause = pauseStatus(game, Date.now())
 
   return (
     <div className={`zr-screen zr-game-shell zr-threat-${threatBand}${outsideArea ? ' zr-outside-area' : ''}`}>
@@ -765,6 +774,19 @@ function GameApp() {
         }}>좀비 지금 등장 · 자동 등장까지 {Math.max(0, Math.ceil(game.nextWaveSec - game.elapsedSec))}초</button>}
         {Date.now() < game.invulnerableUntil && <div role="status" className="zr-banner zr-banner-blue"><GameIcon name="shield" size={17} /> 보호 시간 · 거리를 벌리세요</div>}
         {frozenActive && <div className="zr-banner zr-banner-blue"><GameIcon name="freeze" size={17} /> 좀비 이동 정지 · {frozenRemaining}초</div>}
+        {game.schoolLinked && (schoolPause.active ? (
+          <div role="status" className="zr-banner zr-banner-blue zr-school-pause">
+            <GameIcon name="freeze" size={17} />
+            <span>일시정지 중 · {schoolPause.segmentKm}km 구간 · 남은 멈춤 {schoolPause.remainingBudgetSec}초</span>
+            <span>{schoolPause.autoResumeInSec}초 뒤에 자동으로 다시 달리기</span>
+            <button className="zr-btn zr-btn-primary" onClick={() => { if (endPause(game, Date.now())) rerender() }}>다시 달리기</button>
+          </div>
+        ) : (
+          <button className="zr-banner zr-summon-button" disabled={gpsPaused || schoolPause.remainingBudgetSec <= 0}
+            onClick={() => { if (startPause(game, Date.now())) { proximityRef.current.stop(); rerender() } }}>
+            잠깐 멈추기 · {schoolPause.segmentKm}km 구간 남은 {schoolPause.remainingBudgetSec}초
+          </button>
+        ))}
         {outsideArea && <div role="alert" className="zr-banner zr-banner-red"><GameIcon name="warning" size={17} /> 생존 구역을 벗어났습니다</div>}
         {geoError && <div role="alert" className="zr-banner zr-banner-red"><GameIcon name="warning" size={17} /> {geoError}</div>}
       </div>
@@ -778,7 +800,7 @@ function GameApp() {
         </button>
         <div className="zr-run-state" role="status">
           <small>{runLabel}</small>
-          <strong>{gpsPaused ? 'GPS 신호 대기' : frozenActive ? '좀비 정지 · 경로 확보' : threatBand === 'critical' ? threatLabel : paceStatus}</strong>
+          <strong>{gpsPaused ? 'GPS 신호 대기' : schoolPause.active ? '일시정지 중' : frozenActive ? '좀비 정지 · 경로 확보' : threatBand === 'critical' ? threatLabel : paceStatus}</strong>
         </div>
         <button className="zr-exit-control" aria-label="러닝 종료" onClick={finishRun}>
           <GameIcon name="stop" size={18} />

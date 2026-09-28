@@ -103,7 +103,7 @@ export default function PersonalRunner({ config: baseConfig, zombieMaps = [], on
         <button className="zr-btn zr-btn-primary" disabled={busy}>새 코드 저장</button>
       </form>}
       <button className="zr-btn zr-btn-primary" disabled={busy || Boolean(newCode && !savedCode)} onClick={start}>{busy ? '출발 준비 중…' : '생존 러닝 출발'}</button>
-      <SchoolLink runner={runner} />
+      <SchoolLink runner={runner} onLinked={state => setRunner(r => r ? { ...r, schoolLinkedAt: state.schoolLinkedAt } : r)} />
       <PersonalBoard board={board} config={config} error={boardError} />
       <button className="zr-btn zr-btn-ghost" disabled={busy} onClick={refreshBoard}>랭킹 새로고침</button>
       <button className="zr-admin-link" disabled={busy} onClick={async () => {
