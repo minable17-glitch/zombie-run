@@ -679,6 +679,8 @@ a:focus-visible,
 .zr-game-shell .zr-banner.zr-school-pause .zr-btn {
   align-self: stretch;
   justify-content: center;
+  pointer-events: auto;
+  cursor: pointer;
 }
 
 .zr-game-shell .zr-toast {
