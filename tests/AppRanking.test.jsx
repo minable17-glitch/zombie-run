@@ -52,7 +52,7 @@ test('survival start uses personal identity, saves solo record and displays impr
   expect(start).toBeNull()
   await act(async()=>{fireEvent.click(screen.getByText('개인 출발 테스트'))})
   await act(async()=>{await start(fix())})
-  expect(startSolo).toHaveBeenCalledWith(expect.any(String),{paceIdx:1,playMode:'free',radiusIdx:1})
+  expect(startSolo).toHaveBeenCalledWith(expect.any(String),{paceIdx:1,playMode:'free',radiusIdx:1,missionGoalM:0,missionContinue:false})
   await act(async()=>{vi.advanceTimersByTime(6000);watch(fix())})
   await act(async()=>{fireEvent.click(screen.getByRole('button',{name:'러닝 종료'}))})
   expect(updateRoomStat).not.toHaveBeenCalled()

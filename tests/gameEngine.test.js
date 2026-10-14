@@ -234,3 +234,32 @@ test('the pause auto-resumes once its budget or the 60s cap runs out, whichever 
   expect(checkPauseAutoResume(drained, 20000)).toBe(true)
   expect(drained.pauseBudgetSec).toBe(0)
 })
+
+test('reaching the distance goal ends the run when not set to continue', () => {
+  const game = playing()
+  game.missionGoalM = 1000
+  game.distance = 999
+  let result = advanceGame(game, 1, 1000)
+  expect(result.endReason).toBeNull()
+  expect(game.goalReachedSec).toBeNull()
+  game.distance = 1000
+  result = advanceGame(game, 1, 2000)
+  expect(result.endReason).toBe('goal_reached')
+  expect(game.goalReachedSec).toBe(game.elapsedSec)
+  expect(result.messages.some(m => m.includes('목표 거리'))).toBe(true)
+})
+
+test('reaching the distance goal while set to continue keeps the run going and only records the time once', () => {
+  const game = playing()
+  game.missionGoalM = 1000
+  game.missionContinue = true
+  game.distance = 1000
+  let result = advanceGame(game, 1, 1000)
+  expect(result.endReason).toBeNull()
+  const firstReachedAt = game.goalReachedSec
+  expect(firstReachedAt).toBe(game.elapsedSec)
+  game.distance = 1500
+  result = advanceGame(game, 1, 2000)
+  expect(result.endReason).toBeNull()
+  expect(game.goalReachedSec).toBe(firstReachedAt) // doesn't keep moving once already reached
+})

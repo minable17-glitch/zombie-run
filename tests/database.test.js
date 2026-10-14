@@ -3,7 +3,7 @@ import { beforeAll, afterAll, test, expect } from 'vitest'
 import { PGlite } from '@electric-sql/pglite'
 import { readFileSync } from 'node:fs'
 
-const migration = ['20260909140000_zombie_run_security.sql', '20260910010000_room_expiration.sql', '20260911030000_legacy_profile_lookup.sql', '20260916010000_map_boundary.sql', '20260921010000_room_survival_rank.sql', '20260922010000_personal_survival.sql', '20260922020000_finished_rooms.sql', '20260923010000_solo_maps.sql', '20260923020000_six_digit_codes.sql', '20260923021000_code_attempt_guard.sql', '20260928010000_zombie_run_link.sql', '20260928020000_school_pause_state.sql', '20261014010000_self_chosen_signup_code.sql']
+const migration = ['20260909140000_zombie_run_security.sql', '20260910010000_room_expiration.sql', '20260911030000_legacy_profile_lookup.sql', '20260916010000_map_boundary.sql', '20260921010000_room_survival_rank.sql', '20260922010000_personal_survival.sql', '20260922020000_finished_rooms.sql', '20260923010000_solo_maps.sql', '20260923020000_six_digit_codes.sql', '20260923021000_code_attempt_guard.sql', '20260928010000_zombie_run_link.sql', '20260928020000_school_pause_state.sql', '20261014010000_self_chosen_signup_code.sql', '20261014020000_distance_goal_missions.sql']
   .map(name => readFileSync('supabase/migrations/' + name, 'utf8').replace(/^\uFEFF/, '').trim()).join('\n\n')
 const ids = {
   host: '00000000-0000-4000-8000-000000000001',
@@ -284,6 +284,53 @@ test('a different map owner can share a map for a host to select and start', asy
   expect((await asUser(ids.host,"select zr_solo_board('free',1,0) result")).rows[0].result.me.elapsed_sec).toBe(80)
   await expect(asUser(ids.host,'select zr_solo_start($1,$2,1,0)',['20000000-0000-4000-8000-000000000002','map:00000000-0000-0000-0000-000000000000'])).rejects.toThrow(/지도가 없어요/)
   expect((await asUser(ids.member,'update zombie_maps set name=$1 where id=$2 returning id',['변경 불가',map.id])).rows).toHaveLength(0)
+})
+
+test('solo distance-goal runs record how fast the goal was reached and rank separately from survival', async () => {
+  const goalUser = '00000000-0000-4000-8000-000000000011'
+  await db.query('insert into auth.users(id,is_anonymous) values($1,true)', [goalUser])
+  await asUser(goalUser,"select zr_runner_connect('Goal Runner','654321',true)")
+  const runId='30000000-0000-4000-8000-000000000001'
+  await expect(asUser(goalUser,"select zr_solo_start($1,'free',1,1,99999)",[runId])).rejects.toThrow()
+  await asUser(goalUser,"select zr_solo_start($1,'free',1,1,4000) result",[runId])
+  await db.query("update zr_private.solo_runs set started_at=now()-interval '600 seconds' where id=$1",[runId])
+  const mid=(await asUser(goalUser,"select zr_solo_update($1,300,2500,'alive') result",[runId])).rows[0].result
+  expect(mid.goal_reached_sec).toBeNull()
+  const reached=(await asUser(goalUser,"select zr_solo_update($1,500,4000,'alive') result",[runId])).rows[0].result
+  expect(reached.goal_reached_sec).toBe(500)
+  const finished=(await asUser(goalUser,"select zr_solo_update($1,520,4100,'finished') result",[runId])).rows[0].result
+  expect(finished.goal_reached_sec).toBe(500) // reaching the goal earlier is what's ranked, not the eventual finish
+  expect(finished).toMatchObject({is_best:true,previous_sec:null}) // first-ever goal completion, not compared against survival runs
+  const board=(await asUser(goalUser,"select zr_solo_board('free',1,1,4000) result")).rows[0].result
+  expect(board.me).toMatchObject({nickname:'Goal Runner',goal_reached_sec:500,rank:1})
+  expect(board.total).toBe(1)
+  expect((await asUser(goalUser,"select zr_solo_board('free',1,1) result")).rows[0].result.me).toBeNull()
+  // a faster second run improves the goal record; a slower third run does not
+  const runId2='30000000-0000-4000-8000-000000000002'
+  await asUser(goalUser,"select zr_solo_start($1,'free',1,1,4000)",[runId2])
+  await db.query("update zr_private.solo_runs set started_at=now()-interval '600 seconds' where id=$1",[runId2])
+  const faster=(await asUser(goalUser,"select zr_solo_update($1,400,4000,'finished') result",[runId2])).rows[0].result
+  expect(faster).toMatchObject({goal_reached_sec:400,is_best:true,previous_sec:500})
+  const runId3='30000000-0000-4000-8000-000000000003'
+  await asUser(goalUser,"select zr_solo_start($1,'free',1,1,4000)",[runId3])
+  await db.query("update zr_private.solo_runs set started_at=now()-interval '600 seconds' where id=$1",[runId3])
+  const slower=(await asUser(goalUser,"select zr_solo_update($1,450,4000,'finished') result",[runId3])).rows[0].result
+  expect(slower).toMatchObject({goal_reached_sec:450,is_best:false,previous_sec:400})
+  await asUser(goalUser,'select zr_runner_disconnect()')
+})
+
+test('room distance-goal runs share the same goal from room config and track each player\'s reach time', async () => {
+  const made=(await asUser(ids.host,"select zr_create_room('Goal Host',$1) result",[{playMode:'free',missionGoalM:2000,missionContinue:true}])).rows[0].result
+  expect(made.room.config).toMatchObject({missionGoalM:2000,missionContinue:true})
+  const room=made.room.id
+  await asUser(ids.host,'select zr_start_room($1)',[room])
+  await db.query("update game_rooms set started_at=now()-interval '300 seconds' where id=$1",[room])
+  await asUser(ids.host,"select zr_update_stat_v2($1,1500,6,'alive',150)",[room])
+  let snapshot=(await asUser(ids.host,'select zr_read_room($1) result',[room])).rows[0].result
+  expect(snapshot.players.find(p=>p.id===made.player.id).goal_reached_sec).toBeNull()
+  await asUser(ids.host,"select zr_update_stat_v2($1,2000,6,'alive',200)",[room])
+  snapshot=(await asUser(ids.host,'select zr_read_room($1) result',[room])).rows[0].result
+  expect(snapshot.players.find(p=>p.id===made.player.id).goal_reached_sec).toBe(200)
 })
 
 test('six-digit change preserves records, rejects invalid codes and invalidates old credentials', async () => {

@@ -21,6 +21,16 @@ test('survival beats distance; exact ties share rank and identities remain disti
   expect(screen.getByText('같은이름 (나)')).toBeTruthy()
 })
 
+test('distance-goal ranking puts fastest finishers first, then the rest by progress', () => {
+  const players = [
+    { id: 'a', nickname: '늦게도착', elapsed_sec: 400, distance_m: 3000, goal_reached_sec: 400 },
+    { id: 'b', nickname: '빨리도착', elapsed_sec: 300, distance_m: 3000, goal_reached_sec: 300 },
+    { id: 'c', nickname: '진행중1', elapsed_sec: 200, distance_m: 2000, goal_reached_sec: null },
+    { id: 'd', nickname: '진행중2', elapsed_sec: 150, distance_m: 2500, goal_reached_sec: null },
+  ]
+  expect(rankPlayers(players, 3000).map(p => [p.id, p.rank])).toEqual([['b', 1], ['a', 2], ['d', 3], ['c', 4]])
+})
+
 test('proximity pulses escalate immediately, are throttled, and stop on pause or disable', () => {
   const vibrate = vi.fn()
   const alert = createProximityAlert(vibrate)

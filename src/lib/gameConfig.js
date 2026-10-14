@@ -13,3 +13,7 @@ export const DEFAULT_PACE_IDX = 1
 // 제한구역 모드: 시작 위치를 중심으로 반경을 정해서 그 안에서만 좀비/아이템이 등장
 export const AREA_RADIUS_PRESETS = [300, 500, 1000, 2000] // 미터
 export const DEFAULT_RADIUS_IDX = 1
+
+// 거리 목표런: 목표 거리에 도달하면 성공 — 생존 랭킹과는 별도로, 도달까지 걸린 시간으로 순위를 매김
+export const GOAL_DISTANCE_PRESETS = [1000, 3000, 5000, 10000] // 미터
+export const DEFAULT_GOAL_IDX = 1

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from './lib/supabaseClient.js'
-import { AREA_RADIUS_PRESETS, DEFAULT_PACE_IDX, DEFAULT_RADIUS_IDX, PACE_PRESETS } from './lib/gameConfig.js'
+import { AREA_RADIUS_PRESETS, DEFAULT_PACE_IDX, DEFAULT_RADIUS_IDX, PACE_PRESETS, GOAL_DISTANCE_PRESETS, DEFAULT_GOAL_IDX } from './lib/gameConfig.js'
+import { formatDistance } from './lib/geo.js'
 import * as rooms from './lib/roomApi.js'
 
 const POLL_MS = 3000
@@ -16,6 +17,9 @@ export default function RoomLobby({ zombieMaps = [], onBack, onStart, startError
   const [playMode, setPlayMode] = useState('free')
   const [radiusIdx, setRadiusIdx] = useState(DEFAULT_RADIUS_IDX)
   const [mapId, setMapId] = useState(null)
+  const [missionGoalIdx, setMissionGoalIdx] = useState(null) // null = 생존 러닝(목표 없음), 아니면 GOAL_DISTANCE_PRESETS 인덱스
+  const [missionContinue, setMissionContinue] = useState(false)
+  const missionGoalM = missionGoalIdx == null ? 0 : GOAL_DISTANCE_PRESETS[missionGoalIdx]
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -114,7 +118,7 @@ export default function RoomLobby({ zombieMaps = [], onBack, onStart, startError
     try {
       await rooms.ensureRoomIdentity()
       if (!alive.current) return
-      const config = mapId ? { paceIdx, mapId } : { paceIdx, playMode, radiusIdx }
+      const config = mapId ? { paceIdx, mapId, missionGoalM, missionContinue } : { paceIdx, playMode, radiusIdx, missionGoalM, missionContinue }
       const result = create
         ? await rooms.createRoom(name, config)
         : await rooms.joinRoom(joinCode.trim().toUpperCase(), name)
@@ -270,6 +274,28 @@ export default function RoomLobby({ zombieMaps = [], onBack, onStart, startError
               )}
             </>
           )}
+          <p className="zr-pace-label">미션 (모두에게 적용)</p>
+          <div className="zr-pace-picker zr-pace-picker-2col">
+            <button className={missionGoalIdx == null ? 'zr-pace-btn zr-pace-btn-on' : 'zr-pace-btn'} onClick={() => setMissionGoalIdx(null)}>생존 러닝</button>
+            <button className={missionGoalIdx != null ? 'zr-pace-btn zr-pace-btn-on' : 'zr-pace-btn'}
+              onClick={() => setMissionGoalIdx(idx => idx == null ? DEFAULT_GOAL_IDX : idx)}>거리 목표런</button>
+          </div>
+          {missionGoalIdx != null && (
+            <>
+              <div className="zr-pace-picker">
+                {GOAL_DISTANCE_PRESETS.map((d, i) => (
+                  <button key={d} className={i === missionGoalIdx ? 'zr-pace-btn zr-pace-btn-on' : 'zr-pace-btn'}
+                    onClick={() => setMissionGoalIdx(i)}>{formatDistance(d)}</button>
+                ))}
+              </div>
+              <p className="zr-pace-label">목표에 도달하면</p>
+              <div className="zr-pace-picker zr-pace-picker-2col">
+                <button className={!missionContinue ? 'zr-pace-btn zr-pace-btn-on' : 'zr-pace-btn'} onClick={() => setMissionContinue(false)}>바로 종료</button>
+                <button className={missionContinue ? 'zr-pace-btn zr-pace-btn-on' : 'zr-pace-btn'} onClick={() => setMissionContinue(true)}>계속 달리기</button>
+              </div>
+              <p className="zr-pace-hint">목표 거리에 도달한 시간으로 순위를 매겨요 · 생존 랭킹과는 별도예요.</p>
+            </>
+          )}
           {error && <p className="zr-error">{error}</p>}
           <button className="zr-btn zr-btn-primary" onClick={createRoom} disabled={busy}>
             {busy ? '만드는 중…' : '방 만들기'}
@@ -319,7 +345,7 @@ export default function RoomLobby({ zombieMaps = [], onBack, onStart, startError
         <h1 className="zr-title">대기실</h1>
         <p className="zr-subtitle">이 코드를 다른 사람들에게 알려주세요</p>
         <div className="zr-room-code">{room?.code}</div>
-        <p className="zr-mode-description">{room?.config?.mapId ? '저장된 맵' : room?.config?.playMode === 'restricted' ? '제한구역 모드' : '자유 모드'} · 생존 랭킹</p>
+        <p className="zr-mode-description">{room?.config?.mapId ? '저장된 맵' : room?.config?.playMode === 'restricted' ? '제한구역 모드' : '자유 모드'} · {room?.config?.missionGoalM > 0 ? `거리 목표런 · 목표 ${formatDistance(room.config.missionGoalM)}` : '생존 랭킹'}</p>
         <p className="zr-ranking-note">같은 방 참가자끼리 경쟁합니다. 게임 지도에서 내 순위를 확인하세요.</p>
         {room?.config?.mapId && (
           <p className="zr-pace-hint" style={{ textAlign: 'center' }}>
