@@ -14,23 +14,23 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 
-test('first registration reveals personal code and requires saving it before solo start', async () => {
-  api.connectRunner.mockResolvedValue({runner,code:'AABBCCDDEEFF00112233'})
+test('first registration lets the runner pick their own code and starts right away', async () => {
+  api.connectRunner.mockResolvedValue({runner})
   const onStart=vi.fn().mockResolvedValue(true)
   render(<PersonalRunner config={config} onStart={onStart} onBack={()=>{}} />)
   fireEvent.click(await screen.findByText('처음이에요'))
   fireEvent.change(screen.getByLabelText('닉네임'),{target:{value:'달리미'}})
-  fireEvent.click(screen.getByText('닉네임 등록 · 개인 코드 받기'))
-  expect(await screen.findByText('AABB-CCDD-EEFF-0011-2233')).toBeTruthy()
-  expect(api.connectRunner).toHaveBeenCalledWith('달리미',null)
-  expect(screen.getByText('생존 러닝 출발').disabled).toBe(true)
-  fireEvent.click(screen.getByLabelText('개인 코드를 저장했어요'))
+  fireEvent.change(screen.getByLabelText('개인 코드'),{target:{value:'135790'}})
+  fireEvent.click(screen.getByText('닉네임 등록'))
+  await waitFor(() => expect(screen.getByText('생존 러닝 출발').disabled).toBe(false))
+  expect(api.connectRunner).toHaveBeenCalledWith('달리미','135790',true)
+  expect(screen.queryByText('나의 개인 코드')).toBeNull()
   fireEvent.click(screen.getByText('생존 러닝 출발'))
   await waitFor(()=>expect(onStart).toHaveBeenCalledExactlyOnceWith(config,{soloRunner:runner}))
 })
 
 test('existing nickname and personal code restore records without creating a room', async () => {
-  api.connectRunner.mockResolvedValue({runner,code:null})
+  api.connectRunner.mockResolvedValue({runner})
   api.soloBoard.mockResolvedValue({me:{...runner,rank:72,elapsed_sec:300,distance_m:800},players:[],total:90,recent:[]})
   render(<PersonalRunner config={config} onStart={()=>{}} onBack={()=>{}} />)
   await screen.findByLabelText('닉네임')
@@ -38,7 +38,7 @@ test('existing nickname and personal code restore records without creating a roo
   fireEvent.change(screen.getByLabelText('개인 코드'),{target:{value:'my-personal-code'}})
   fireEvent.click(screen.getByText('내 기록으로 접속'))
   expect(await screen.findByText('72위 / 90명')).toBeTruthy()
-  expect(api.connectRunner).toHaveBeenCalledWith('달리미','my-personal-code')
+  expect(api.connectRunner).toHaveBeenCalledWith('달리미','my-personal-code',false)
   expect(screen.queryByText('나의 개인 코드')).toBeNull()
 })
 

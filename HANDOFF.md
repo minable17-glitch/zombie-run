@@ -4,7 +4,15 @@
 
 ## 1. 마지막 작업과 다음 단계
 
-- 가장 최근 작업은 학교 행사(매 1런) 연동 러너 전용 "잠깐 멈추기"다. 매 1런 자체 앱과 같은 규칙(1km당 180초 멈춤 예산,
+- 가장 최근 작업은 개인 기록(솔로) 가입 방식 변경이다. "처음이에요" 탭에서 시스템이 숫자 6자리를 생성해 보여주던 것을
+  없애고, 본인이 원하는 숫자 6자리를 직접 입력해 바로 가입하도록 바꿨다. DB의 `zr_runner_connect(text,text)`를 `drop`하고
+  `zr_runner_connect(p_nickname,p_code,p_create)` 3-인자 버전으로 다시 만들었다(가입/로그인 구분을 `p_code is null`
+  추측 대신 `p_create` 플래그로 명시). **운영 SQL Editor에 `20261014010000_self_chosen_signup_code.sql`을 아직
+  적용하지 않았다.** 이건 이전 마이그레이션들과 달리 "적용 전엔 그냥 안전하게 꺼져 있는" 종류가 아니다 — 새 프런트가
+  먼저 배포되면 `p_create` 인자를 모르는 옛 DB 함수 때문에 가입·로그인 둘 다(개인 기록 접속 전체) 깨진다. DB 먼저,
+  그다음 프런트 순서를 반드시 지켜야 한다. 로컬 PGlite 자동 테스트와 프로덕션 빌드만 통과했고, 실제 운영 Supabase
+  앞에서 가입→로그인 왕복은 확인하지 않았다.
+- 그 이전 작업은 학교 행사(매 1런) 연동 러너 전용 "잠깐 멈추기"다. 매 1런 자체 앱과 같은 규칙(1km당 180초 멈춤 예산,
   60초 뒤 자동 재개, 온전한 1km를 넘길 때만 재충전, 연동 안 한 일반 플레이는 그대로)을 구현했다.
   `src/lib/gameEngine.js`의 `startPause/endPause/checkPauseAutoResume/pauseStatus`와 `App.jsx`의 `tick()` 초반 분기(멈춰 있으면
   `advanceGame`을 아예 건너뜀)로 시간·거리·좀비를 동시에 멈춘다. DB에는 `zr_private.runners.school_linked_at`을 추가하고

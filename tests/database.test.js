@@ -3,7 +3,7 @@ import { beforeAll, afterAll, test, expect } from 'vitest'
 import { PGlite } from '@electric-sql/pglite'
 import { readFileSync } from 'node:fs'
 
-const migration = ['20260909140000_zombie_run_security.sql', '20260910010000_room_expiration.sql', '20260911030000_legacy_profile_lookup.sql', '20260916010000_map_boundary.sql', '20260921010000_room_survival_rank.sql', '20260922010000_personal_survival.sql', '20260922020000_finished_rooms.sql', '20260923010000_solo_maps.sql', '20260923020000_six_digit_codes.sql', '20260923021000_code_attempt_guard.sql', '20260928010000_zombie_run_link.sql', '20260928020000_school_pause_state.sql']
+const migration = ['20260909140000_zombie_run_security.sql', '20260910010000_room_expiration.sql', '20260911030000_legacy_profile_lookup.sql', '20260916010000_map_boundary.sql', '20260921010000_room_survival_rank.sql', '20260922010000_personal_survival.sql', '20260922020000_finished_rooms.sql', '20260923010000_solo_maps.sql', '20260923020000_six_digit_codes.sql', '20260923021000_code_attempt_guard.sql', '20260928010000_zombie_run_link.sql', '20260928020000_school_pause_state.sql', '20261014010000_self_chosen_signup_code.sql']
   .map(name => readFileSync('supabase/migrations/' + name, 'utf8').replace(/^\uFEFF/, '').trim()).join('\n\n')
 const ids = {
   host: '00000000-0000-4000-8000-000000000001',
@@ -202,13 +202,14 @@ test('survival stats are room-private, bounded, monotonic and immutable after fi
 })
 
 test('personal codes restore identity across devices without exposing codes or other histories', async () => {
-  const a = (await asUser(ids.host, "select zr_runner_connect('Solo A',null) result")).rows[0].result
-  expect(a.code).toMatch(/^[0-9]{6}$/)
+  await expect(asUser(ids.host, "select zr_runner_connect('Solo A','12',true)")).rejects.toThrow(/6자리/)
+  const a = (await asUser(ids.host, "select zr_runner_connect('Solo A','135790',true) result")).rows[0].result
+  expect(a.runner.nickname).toBe('Solo A')
+  expect((await asUser(ids.member,"select zr_runner_connect('Solo A','135790',true) result")).rows[0].result.error).toBeTruthy() // nickname taken, not a login
   expect((await asUser(ids.member,"select zr_runner_connect('Solo A','wrong') result")).rows[0].result.error).toBeTruthy()
   expect((await asUser(ids.member,'select zr_runner_me() result')).rows[0].result).toBeNull()
-  const restored = (await asUser(ids.stranger,'select zr_runner_connect($1,$2) result',['Solo A',a.code.match(/.{1,3}/g).join('-').toLowerCase()])).rows[0].result
+  const restored = (await asUser(ids.stranger,'select zr_runner_connect($1,$2) result',['Solo A','135-790'])).rows[0].result
   expect(restored.runner).toEqual(a.runner)
-  expect(restored.code).toBeNull()
   expect((await asUser(ids.stranger,'select zr_runner_me() result')).rows[0].result).toEqual({...a.runner,schoolLinkedAt:null})
   await expect(asUser(ids.host,'select code_hash from zr_private.runners')).rejects.toThrow(/permission denied/)
   await asUser(ids.stranger,'select zr_runner_disconnect()')
@@ -220,7 +221,7 @@ test('school-event linking is remembered on the runner and survives reconnecting
   const schoolUser = '00000000-0000-4000-8000-000000000010'
   await db.query('insert into auth.users(id,is_anonymous) values($1,true)', [schoolUser])
   await expect(asUser(ids.stranger,'select zr_runner_school_link()')).rejects.toThrow(/접속이 만료/)
-  await asUser(schoolUser,"select zr_runner_connect('Solo Linked',null)")
+  await asUser(schoolUser,"select zr_runner_connect('Solo Linked','246810',true)")
   const linked = (await asUser(schoolUser,'select zr_runner_school_link() result')).rows[0].result
   expect(linked.schoolLinkedAt).toBeTruthy()
   expect((await asUser(schoolUser,'select zr_runner_me() result')).rows[0].result.schoolLinkedAt).toBe(linked.schoolLinkedAt)
@@ -230,7 +231,7 @@ test('school-event linking is remembered on the runner and survives reconnecting
 })
 
 test('personal bests, competing ranks, difficulty separation and idempotent finish use real SQL', async () => {
-  await asUser(ids.member,"select zr_runner_connect('Solo B',null)")
+  await asUser(ids.member,"select zr_runner_connect('Solo B','222222',true)")
   const runA='10000000-0000-4000-8000-000000000001', runA2='10000000-0000-4000-8000-000000000002', runB='10000000-0000-4000-8000-000000000003'
   const start = (user,id,pace=1) => asUser(user,"select zr_solo_start($1,'free',$2,1) result",[id,pace])
   const finish = (user,id,elapsed,distance) => asUser(user,"select zr_solo_update($1,$2,$3,'finished') result",[id,elapsed,distance])

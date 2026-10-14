@@ -7,7 +7,7 @@ async function call(name, args = {}) {
   return data
 }
 export async function currentRunner() { await ensureRoomIdentity(); return call('zr_runner_me') }
-export const connectRunner = (nickname, code = null) => call('zr_runner_connect', { p_nickname:nickname, p_code:code })
+export const connectRunner = (nickname, code, create = false) => call('zr_runner_connect', { p_nickname:nickname, p_code:code, p_create:create })
 export const disconnectRunner = () => call('zr_runner_disconnect')
 export const changeRunnerCode = code => call('zr_runner_change_code', { p_code:code })
 export const linkSchoolRunner = () => call('zr_runner_school_link')

@@ -42,8 +42,8 @@ export default function PersonalRunner({ config: baseConfig, zombieMaps = [], on
     lock.current = true; setBusy(true); setError('')
     try {
       await currentRunner()
-      const data = await connectRunner(nickname.trim(), tab === 'create' ? null : code)
-      if (active.current) { setRunner(data.runner); setNewCode(data.code || ''); setCode(''); setSavedCode(false) }
+      const data = await connectRunner(nickname.trim(), code, tab === 'create')
+      if (active.current) { setRunner(data.runner); setCode('') }
     } catch (e) { if (active.current) setError(e.message) }
     finally { lock.current = false; if (active.current) setBusy(false) }
   }
@@ -80,14 +80,19 @@ export default function PersonalRunner({ config: baseConfig, zombieMaps = [], on
     <p className="zr-ranking-note">{selectedMap ? `${selectedMap.name} · 좀비 경로 ${selectedMap.routes.length}개. 지도 구역 안에서 출발하세요. 이 맵의 같은 페이스끼리 기록을 비교해요.` : '저장된 맵을 선택하면 혼자서도 그 구역과 좀비 경로로 달릴 수 있어요.'}</p>
     {loading ? <p role="status">내 기록 접속 확인 중…</p> : !runner ? <>
       <div className="zr-pace-picker zr-pace-picker-2col">
-        <button className={`zr-pace-btn${tab === 'login' ? ' zr-pace-btn-on' : ''}`} aria-pressed={tab === 'login'} onClick={() => { setTab('login'); setError('') }}>기존 기록 접속</button>
-        <button className={`zr-pace-btn${tab === 'create' ? ' zr-pace-btn-on' : ''}`} aria-pressed={tab === 'create'} onClick={() => { setTab('create'); setError('') }}>처음이에요</button>
+        <button className={`zr-pace-btn${tab === 'login' ? ' zr-pace-btn-on' : ''}`} aria-pressed={tab === 'login'} onClick={() => { setTab('login'); setError(''); setCode('') }}>기존 기록 접속</button>
+        <button className={`zr-pace-btn${tab === 'create' ? ' zr-pace-btn-on' : ''}`} aria-pressed={tab === 'create'} onClick={() => { setTab('create'); setError(''); setCode('') }}>처음이에요</button>
       </div>
       <form onSubmit={connect}>
         <label className="zr-personal-label">닉네임<input className="zr-admin-input" value={nickname} onChange={e => setNickname(e.target.value)} maxLength={20} required autoComplete="username" /></label>
-        {tab === 'login' && <label className="zr-personal-label">개인 코드<input className="zr-admin-input" type="password" value={code} onChange={e => setCode(e.target.value)} required autoComplete="current-password" spellCheck={false} /></label>}
-        <p className="zr-ranking-note">{tab === 'create' ? '처음 등록하면 숫자 6자리 개인 코드를 발급해요. 접속 후 원하는 숫자로 바꿀 수 있어요.' : '숫자 6자리 개인 코드를 입력하세요. 예전에 받은 긴 코드도 사용할 수 있어요.'}</p>
-        <button className="zr-btn zr-btn-primary" disabled={busy}>{busy ? '연결 중…' : tab === 'create' ? '닉네임 등록 · 개인 코드 받기' : '내 기록으로 접속'}</button>
+        <label className="zr-personal-label">개인 코드
+          <input className="zr-admin-input" type="password" value={code} disabled={busy} required spellCheck={false}
+            autoComplete={tab === 'create' ? 'new-password' : 'current-password'}
+            {...(tab === 'create' ? { inputMode: 'numeric', pattern: '[0-9]{6}', maxLength: 6 } : {})}
+            onChange={e => setCode(tab === 'create' ? e.target.value.replace(/\D/g, '') : e.target.value)} />
+        </label>
+        <p className="zr-ranking-note">{tab === 'create' ? '나중에 다른 기기에서도 쓸 수 있게 숫자 6자리를 나만의 개인 코드로 정해주세요.' : '등록할 때 정한 숫자 6자리 개인 코드를 입력하세요. 예전에 받은 긴 코드도 사용할 수 있어요.'}</p>
+        <button className="zr-btn zr-btn-primary" disabled={busy}>{busy ? '연결 중…' : tab === 'create' ? '닉네임 등록' : '내 기록으로 접속'}</button>
       </form>
     </> : <>
       {newCode && <div className="zr-personal-code">
