@@ -17,3 +17,11 @@ export const DEFAULT_RADIUS_IDX = 1
 // 거리 목표런: 목표 거리에 도달하면 성공 — 생존 랭킹과는 별도로, 도달까지 걸린 시간으로 순위를 매김
 export const GOAL_DISTANCE_PRESETS = [1000, 3000, 5000, 10000] // 미터
 export const DEFAULT_GOAL_IDX = 1
+export const MIN_GOAL_DISTANCE_KM = 0.1
+export const MAX_GOAL_DISTANCE_KM = 50 // 서버 쪽 goal_m 상한(50000m)과 맞춤
+
+// 시간 목표런: 목표 시간 동안 달리면 성공 — 그 시간 동안 달린 거리로 순위를 매김
+export const GOAL_TIME_PRESETS = [300, 600, 1200, 1800] // 초 (5/10/20/30분)
+export const DEFAULT_TIME_IDX = 1
+export const MIN_GOAL_TIME_MIN = 1
+export const MAX_GOAL_TIME_MIN = 120 // 서버 쪽 goal_sec 상한(7200초)과 맞춤

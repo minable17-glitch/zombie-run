@@ -3,7 +3,7 @@ import { beforeAll, afterAll, test, expect } from 'vitest'
 import { PGlite } from '@electric-sql/pglite'
 import { readFileSync } from 'node:fs'
 
-const migration = ['20260909140000_zombie_run_security.sql', '20260910010000_room_expiration.sql', '20260911030000_legacy_profile_lookup.sql', '20260916010000_map_boundary.sql', '20260921010000_room_survival_rank.sql', '20260922010000_personal_survival.sql', '20260922020000_finished_rooms.sql', '20260923010000_solo_maps.sql', '20260923020000_six_digit_codes.sql', '20260923021000_code_attempt_guard.sql', '20260928010000_zombie_run_link.sql', '20260928020000_school_pause_state.sql', '20261014010000_self_chosen_signup_code.sql', '20261014020000_distance_goal_missions.sql']
+const migration = ['20260909140000_zombie_run_security.sql', '20260910010000_room_expiration.sql', '20260911030000_legacy_profile_lookup.sql', '20260916010000_map_boundary.sql', '20260921010000_room_survival_rank.sql', '20260922010000_personal_survival.sql', '20260922020000_finished_rooms.sql', '20260923010000_solo_maps.sql', '20260923020000_six_digit_codes.sql', '20260923021000_code_attempt_guard.sql', '20260928010000_zombie_run_link.sql', '20260928020000_school_pause_state.sql', '20261014010000_self_chosen_signup_code.sql', '20261014020000_distance_goal_missions.sql', '20261016010000_time_goal_missions.sql']
   .map(name => readFileSync('supabase/migrations/' + name, 'utf8').replace(/^\uFEFF/, '').trim()).join('\n\n')
 const ids = {
   host: '00000000-0000-4000-8000-000000000001',
@@ -319,6 +319,40 @@ test('solo distance-goal runs record how fast the goal was reached and rank sepa
   await asUser(goalUser,'select zr_runner_disconnect()')
 })
 
+test('solo time-goal runs record how far the goal time was covered and rank separately from survival', async () => {
+  const timeUser = '00000000-0000-4000-8000-000000000012'
+  await db.query('insert into auth.users(id,is_anonymous) values($1,true)', [timeUser])
+  await asUser(timeUser,"select zr_runner_connect('Time Runner','135791',true)")
+  const runId='30000000-0000-4000-8000-000000000004'
+  await expect(asUser(timeUser,"select zr_solo_start($1,'free',1,1,0,99999)",[runId])).rejects.toThrow()
+  await expect(asUser(timeUser,"select zr_solo_start($1,'free',1,1,1000,600)",[runId])).rejects.toThrow() // can't set both goals
+  await asUser(timeUser,"select zr_solo_start($1,'free',1,1,0,600) result",[runId])
+  await db.query("update zr_private.solo_runs set started_at=now()-interval '700 seconds' where id=$1",[runId])
+  const mid=(await asUser(timeUser,"select zr_solo_update($1,300,2500,'alive') result",[runId])).rows[0].result
+  expect(mid.goal_reached_m).toBeNull()
+  const reached=(await asUser(timeUser,"select zr_solo_update($1,600,5000,'alive') result",[runId])).rows[0].result
+  expect(reached.goal_reached_m).toBe(5000)
+  const finished=(await asUser(timeUser,"select zr_solo_update($1,650,5200,'finished') result",[runId])).rows[0].result
+  expect(finished.goal_reached_m).toBe(5000) // distance at goal time is what's ranked, not the eventual finish distance
+  expect(finished).toMatchObject({is_best:true,previous_sec:null})
+  const board=(await asUser(timeUser,"select zr_solo_board('free',1,1,0,600) result")).rows[0].result
+  expect(board.me).toMatchObject({nickname:'Time Runner',goal_reached_m:5000,rank:1})
+  expect(board.total).toBe(1)
+  expect((await asUser(timeUser,"select zr_solo_board('free',1,1) result")).rows[0].result.me).toBeNull()
+  // a farther second run improves the record; a shorter third run does not
+  const runId2='30000000-0000-4000-8000-000000000005'
+  await asUser(timeUser,"select zr_solo_start($1,'free',1,1,0,600)",[runId2])
+  await db.query("update zr_private.solo_runs set started_at=now()-interval '700 seconds' where id=$1",[runId2])
+  const farther=(await asUser(timeUser,"select zr_solo_update($1,600,6000,'finished') result",[runId2])).rows[0].result
+  expect(farther).toMatchObject({goal_reached_m:6000,is_best:true})
+  const runId3='30000000-0000-4000-8000-000000000006'
+  await asUser(timeUser,"select zr_solo_start($1,'free',1,1,0,600)",[runId3])
+  await db.query("update zr_private.solo_runs set started_at=now()-interval '700 seconds' where id=$1",[runId3])
+  const shorter=(await asUser(timeUser,"select zr_solo_update($1,600,5500,'finished') result",[runId3])).rows[0].result
+  expect(shorter).toMatchObject({goal_reached_m:5500,is_best:false})
+  await asUser(timeUser,'select zr_runner_disconnect()')
+})
+
 test('room distance-goal runs share the same goal from room config and track each player\'s reach time', async () => {
   const made=(await asUser(ids.host,"select zr_create_room('Goal Host',$1) result",[{playMode:'free',missionGoalM:2000,missionContinue:true}])).rows[0].result
   expect(made.room.config).toMatchObject({missionGoalM:2000,missionContinue:true})
@@ -331,6 +365,20 @@ test('room distance-goal runs share the same goal from room config and track eac
   await asUser(ids.host,"select zr_update_stat_v2($1,2000,6,'alive',200)",[room])
   snapshot=(await asUser(ids.host,'select zr_read_room($1) result',[room])).rows[0].result
   expect(snapshot.players.find(p=>p.id===made.player.id).goal_reached_sec).toBe(200)
+})
+
+test('room time-goal runs share the same goal time and track how far each player got', async () => {
+  const made=(await asUser(ids.host,"select zr_create_room('Time Host',$1) result",[{playMode:'free',missionGoalSec:300}])).rows[0].result
+  expect(made.room.config).toMatchObject({missionGoalSec:300,missionGoalM:0})
+  const room=made.room.id
+  await asUser(ids.host,'select zr_start_room($1)',[room])
+  await db.query("update game_rooms set started_at=now()-interval '400 seconds' where id=$1",[room])
+  await asUser(ids.host,"select zr_update_stat_v2($1,2000,6,'alive',250)",[room])
+  let snapshot=(await asUser(ids.host,'select zr_read_room($1) result',[room])).rows[0].result
+  expect(snapshot.players.find(p=>p.id===made.player.id).goal_reached_m).toBeNull()
+  await asUser(ids.host,"select zr_update_stat_v2($1,2800,6,'alive',300)",[room])
+  snapshot=(await asUser(ids.host,'select zr_read_room($1) result',[room])).rows[0].result
+  expect(snapshot.players.find(p=>p.id===made.player.id).goal_reached_m).toBe(2800)
 })
 
 test('six-digit change preserves records, rejects invalid codes and invalidates old credentials', async () => {

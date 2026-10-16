@@ -263,3 +263,32 @@ test('reaching the distance goal while set to continue keeps the run going and o
   expect(result.endReason).toBeNull()
   expect(game.goalReachedSec).toBe(firstReachedAt) // doesn't keep moving once already reached
 })
+
+test('reaching the time goal ends the run when not set to continue', () => {
+  const game = playing()
+  game.missionGoalSec = 600
+  game.elapsedSec = 598
+  game.distance = 1800
+  let result = advanceGame(game, 1, 1000)
+  expect(result.endReason).toBeNull()
+  expect(game.goalReachedDistanceM).toBeNull()
+  result = advanceGame(game, 1, 2000)
+  expect(result.endReason).toBe('goal_reached')
+  expect(game.goalReachedDistanceM).toBe(game.distance)
+  expect(result.messages.some(m => m.includes('목표 시간'))).toBe(true)
+})
+
+test('reaching the time goal while set to continue keeps the run going and freezes the distance only once', () => {
+  const game = playing()
+  game.missionGoalSec = 600
+  game.missionContinue = true
+  game.elapsedSec = 600
+  game.distance = 2000
+  let result = advanceGame(game, 1, 1000)
+  expect(result.endReason).toBeNull()
+  expect(game.goalReachedDistanceM).toBe(2000)
+  game.distance = 2500
+  result = advanceGame(game, 1, 2000)
+  expect(result.endReason).toBeNull()
+  expect(game.goalReachedDistanceM).toBe(2000) // doesn't keep moving once already reached
+})

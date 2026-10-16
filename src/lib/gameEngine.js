@@ -102,8 +102,10 @@ export function makeInitialGame() {
     roomPlayerId: null,
     roomNickname: null,
     missionGoalM: 0, // 거리 목표런의 목표 거리(미터). 0이면 목표 없는 일반 생존 러닝
-    missionContinue: false, // 목표 도달 후에도 계속 달릴지(true) 바로 종료할지(false) — missionGoalM>0일 때만 의미 있음
-    goalReachedSec: null, // 목표에 도달한 시점의 elapsedSec. 아직 도달 전이면 null
+    missionGoalSec: 0, // 시간 목표런의 목표 시간(초). missionGoalM과 동시에 쓰지 않음(미션은 하나만 선택)
+    missionContinue: false, // 목표 도달 후에도 계속 달릴지(true) 바로 종료할지(false) — 목표가 있을 때만 의미 있음
+    goalReachedSec: null, // 거리 목표에 도달한 시점의 elapsedSec. 아직 도달 전이면 null
+    goalReachedDistanceM: null, // 시간 목표에 도달한 시점의 distance. 아직 도달 전이면 null
     schoolLinked: false, // 학교연동(매 1런) 러너의 생존 러닝일 때만 아래 멈춤 예산이 동작함
     pauseSegment: 0, // 지금 멈춤 예산을 계산한 1km 구간 (Math.floor(distance/1000))
     pauseBudgetSec: SCHOOL_PAUSE_BUDGET_SEC, // 이번 구간에서 남은 멈춤 예산(초)
@@ -290,6 +292,12 @@ export function advanceGame(game, dt, now) {
     if (game.missionGoalM > 0 && game.goalReachedSec == null && game.distance >= game.missionGoalM) {
       game.goalReachedSec = game.elapsedSec
       emit(game.missionContinue ? '목표 거리에 도달했어요! 계속 달리거나 지금 종료할 수 있어요.' : '목표 거리에 도달했어요!')
+      if (!game.missionContinue) return { messages, endReason: 'goal_reached' }
+    }
+
+    if (game.missionGoalSec > 0 && game.goalReachedDistanceM == null && game.elapsedSec >= game.missionGoalSec) {
+      game.goalReachedDistanceM = game.distance
+      emit(game.missionContinue ? '목표 시간에 도달했어요! 계속 달리거나 지금 종료할 수 있어요.' : '목표 시간에 도달했어요!')
       if (!game.missionContinue) return { messages, endReason: 'goal_reached' }
     }
 

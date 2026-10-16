@@ -31,6 +31,16 @@ test('distance-goal ranking puts fastest finishers first, then the rest by progr
   expect(rankPlayers(players, 3000).map(p => [p.id, p.rank])).toEqual([['b', 1], ['a', 2], ['d', 3], ['c', 4]])
 })
 
+test('time-goal ranking puts whoever covered the most distance first, then the rest by progress', () => {
+  const players = [
+    { id: 'a', nickname: '적게감', elapsed_sec: 600, distance_m: 4000, goal_reached_m: 4000 },
+    { id: 'b', nickname: '멀리감', elapsed_sec: 600, distance_m: 6000, goal_reached_m: 6000 },
+    { id: 'c', nickname: '진행중1', elapsed_sec: 300, distance_m: 3000, goal_reached_m: null },
+    { id: 'd', nickname: '진행중2', elapsed_sec: 200, distance_m: 3500, goal_reached_m: null },
+  ]
+  expect(rankPlayers(players, 0, 600).map(p => [p.id, p.rank])).toEqual([['b', 1], ['a', 2], ['d', 3], ['c', 4]])
+})
+
 test('proximity pulses escalate immediately, are throttled, and stop on pause or disable', () => {
   const vibrate = vi.fn()
   const alert = createProximityAlert(vibrate)
