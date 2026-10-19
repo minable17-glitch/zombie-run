@@ -3,7 +3,7 @@ import { beforeAll, afterAll, test, expect } from 'vitest'
 import { PGlite } from '@electric-sql/pglite'
 import { readFileSync } from 'node:fs'
 
-const migration = ['20260909140000_zombie_run_security.sql', '20260910010000_room_expiration.sql', '20260911030000_legacy_profile_lookup.sql', '20260916010000_map_boundary.sql', '20260921010000_room_survival_rank.sql', '20260922010000_personal_survival.sql', '20260922020000_finished_rooms.sql', '20260923010000_solo_maps.sql', '20260923020000_six_digit_codes.sql', '20260923021000_code_attempt_guard.sql', '20260928010000_zombie_run_link.sql', '20260928020000_school_pause_state.sql', '20261014010000_self_chosen_signup_code.sql', '20261014020000_distance_goal_missions.sql', '20261016010000_time_goal_missions.sql']
+const migration = ['20260909140000_zombie_run_security.sql', '20260910010000_room_expiration.sql', '20260911030000_legacy_profile_lookup.sql', '20260916010000_map_boundary.sql', '20260921010000_room_survival_rank.sql', '20260922010000_personal_survival.sql', '20260922020000_finished_rooms.sql', '20260923010000_solo_maps.sql', '20260923020000_six_digit_codes.sql', '20260923021000_code_attempt_guard.sql', '20260928010000_zombie_run_link.sql', '20260928020000_school_pause_state.sql', '20261014010000_self_chosen_signup_code.sql', '20261014020000_distance_goal_missions.sql', '20261016010000_time_goal_missions.sql', '20261019010000_pace_hold_missions.sql']
   .map(name => readFileSync('supabase/migrations/' + name, 'utf8').replace(/^\uFEFF/, '').trim()).join('\n\n')
 const ids = {
   host: '00000000-0000-4000-8000-000000000001',
@@ -379,6 +379,58 @@ test('room time-goal runs share the same goal time and track how far each player
   await asUser(ids.host,"select zr_update_stat_v2($1,2800,6,'alive',300)",[room])
   snapshot=(await asUser(ids.host,'select zr_read_room($1) result',[room])).rows[0].result
   expect(snapshot.players.find(p=>p.id===made.player.id).goal_reached_m).toBe(2800)
+})
+
+test('solo pace-hold runs record how fast the goal was reached and rank separately from survival', async () => {
+  const paceUser = '00000000-0000-4000-8000-000000000013'
+  await db.query('insert into auth.users(id,is_anonymous) values($1,true)', [paceUser])
+  await asUser(paceUser,"select zr_runner_connect('Pace Runner','246810',true)")
+  const runId='30000000-0000-4000-8000-000000000007'
+  await expect(asUser(paceUser,"select zr_solo_start($1,'free',1,1,0,0,99999)",[runId])).rejects.toThrow()
+  await expect(asUser(paceUser,"select zr_solo_start($1,'free',1,1,1000,0,300)",[runId])).rejects.toThrow() // can't set both goals
+  await asUser(paceUser,"select zr_solo_start($1,'free',1,1,0,0,300) result",[runId])
+  await db.query("update zr_private.solo_runs set started_at=now()-interval '600 seconds' where id=$1",[runId])
+  const mid=(await asUser(paceUser,"select zr_solo_update($1,250,2000,'alive') result",[runId])).rows[0].result
+  expect(mid.pace_reached_sec).toBeNull() // no pace_reached_sec reported yet
+  const reached=(await asUser(paceUser,"select zr_solo_update($1,400,3000,'alive',300) result",[runId])).rows[0].result
+  expect(reached.pace_reached_sec).toBe(300)
+  const finished=(await asUser(paceUser,"select zr_solo_update($1,450,3200,'finished',320) result",[runId])).rows[0].result
+  expect(finished.pace_reached_sec).toBe(300) // only the first report is kept, a later one doesn't move it
+  expect(finished).toMatchObject({is_best:true,previous_sec:null})
+  const board=(await asUser(paceUser,"select zr_solo_board('free',1,1,0,0,300) result")).rows[0].result
+  expect(board.me).toMatchObject({nickname:'Pace Runner',pace_reached_sec:300,rank:1})
+  expect(board.total).toBe(1)
+  expect((await asUser(paceUser,"select zr_solo_board('free',1,1) result")).rows[0].result.me).toBeNull()
+  // a faster second run improves the record; a slower third run does not
+  const runId2='30000000-0000-4000-8000-000000000008'
+  await asUser(paceUser,"select zr_solo_start($1,'free',1,1,0,0,300)",[runId2])
+  await db.query("update zr_private.solo_runs set started_at=now()-interval '600 seconds' where id=$1",[runId2])
+  const faster=(await asUser(paceUser,"select zr_solo_update($1,280,2800,'finished',250) result",[runId2])).rows[0].result
+  expect(faster).toMatchObject({pace_reached_sec:250,is_best:true,previous_sec:null})
+  const runId3='30000000-0000-4000-8000-000000000009'
+  await asUser(paceUser,"select zr_solo_start($1,'free',1,1,0,0,300)",[runId3])
+  await db.query("update zr_private.solo_runs set started_at=now()-interval '600 seconds' where id=$1",[runId3])
+  const slower=(await asUser(paceUser,"select zr_solo_update($1,290,2900,'finished',280) result",[runId3])).rows[0].result
+  expect(slower).toMatchObject({pace_reached_sec:280,is_best:false})
+  await asUser(paceUser,'select zr_runner_disconnect()')
+})
+
+test('room pace-hold runs share the same goal from room config and track each player\'s reach time', async () => {
+  const made=(await asUser(ids.host,"select zr_create_room('Pace Host',$1) result",[{playMode:'free',missionGoalPaceSec:200}])).rows[0].result
+  expect(made.room.config).toMatchObject({missionGoalPaceSec:200,missionGoalM:0,missionGoalSec:0})
+  const room=made.room.id
+  await asUser(ids.host,'select zr_start_room($1)',[room])
+  await db.query("update game_rooms set started_at=now()-interval '300 seconds' where id=$1",[room])
+  await asUser(ids.host,"select zr_update_stat_v2($1,1500,6,'alive',150)",[room])
+  let snapshot=(await asUser(ids.host,'select zr_read_room($1) result',[room])).rows[0].result
+  expect(snapshot.players.find(p=>p.id===made.player.id).pace_reached_sec).toBeNull()
+  await asUser(ids.host,"select zr_update_stat_v2($1,2000,6,'alive',200,200)",[room])
+  snapshot=(await asUser(ids.host,'select zr_read_room($1) result',[room])).rows[0].result
+  expect(snapshot.players.find(p=>p.id===made.player.id).pace_reached_sec).toBe(200)
+  // reporting a different value afterward doesn't move it once it's set
+  await asUser(ids.host,"select zr_update_stat_v2($1,2200,6,'alive',220,210)",[room])
+  snapshot=(await asUser(ids.host,'select zr_read_room($1) result',[room])).rows[0].result
+  expect(snapshot.players.find(p=>p.id===made.player.id).pace_reached_sec).toBe(200)
 })
 
 test('six-digit change preserves records, rejects invalid codes and invalidates old credentials', async () => {

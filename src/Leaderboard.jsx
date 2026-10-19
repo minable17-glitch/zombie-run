@@ -2,11 +2,12 @@ import { rankPlayers } from './lib/leaderboard.js'
 import { formatTime } from './lib/gameEngine.js'
 import { formatDistance } from './lib/geo.js'
 
-export default function Leaderboard({ players, playerId, error, title = '이 방의 생존 랭킹', goalM = 0, goalSec = 0 }) {
-  const ranked = rankPlayers(players, goalM, goalSec)
+export default function Leaderboard({ players, playerId, error, title = '이 방의 생존 랭킹', goalM = 0, goalSec = 0, goalPaceSec = 0 }) {
+  const ranked = rankPlayers(players, goalM, goalSec, goalPaceSec)
   const own = ranked.find(p => p.id === playerId)
   const note = goalM > 0 ? `목표 ${formatDistance(goalM)} 도달 시간 순 · 아직 도달 전이면 이동 거리 순`
     : goalSec > 0 ? `목표 ${formatTime(goalSec)} 동안 달린 거리 순 · 아직 도달 전이면 이동 거리 순`
+    : goalPaceSec > 0 ? `목표 페이스 ${formatTime(goalPaceSec)} 유지 도달 시간 순 · 아직 도달 전이면 이동 거리 순`
     : '생존 시간 순 · 동률이면 이동 거리 · 같은 기록은 공동 순위'
   return <section className="zr-ranking" aria-label={title}>
     <div className="zr-ranking-summary"><span>{title}</span><strong>{own ? `내 순위 ${own.rank}위 / ${ranked.length}명` : '순위 확인 중'}</strong></div>
@@ -21,6 +22,7 @@ export default function Leaderboard({ players, playerId, error, title = '이 방
         <strong className="zr-ranking-time">{
           goalM > 0 ? (p.goal_reached_sec == null ? '도달 전' : formatTime(p.goal_reached_sec))
           : goalSec > 0 ? (p.goal_reached_m == null ? '도달 전' : formatDistance(p.goal_reached_m))
+          : goalPaceSec > 0 ? (p.pace_reached_sec == null ? '도달 전' : formatTime(p.pace_reached_sec))
           : formatTime(p.elapsed_sec)
         }</strong>
       </li>)}

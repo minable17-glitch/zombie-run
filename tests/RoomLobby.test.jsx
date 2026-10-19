@@ -47,7 +47,7 @@ test('failed position lookup keeps lobby retry available',async()=>{
 
 test.each([false,true])('authored map selection is explicit when creating and starting a room (selected: %s)',async selected=>{
  const map={id:'authored-map',name:'공원',radius:400}
- const config=selected ? {paceIdx:1,mapId:map.id,missionGoalM:0,missionGoalSec:0,missionContinue:false} : {paceIdx:1,playMode:'free',radiusIdx:1,missionGoalM:0,missionGoalSec:0,missionContinue:false}
+ const config=selected ? {paceIdx:1,mapId:map.id,missionGoalM:0,missionGoalSec:0,missionGoalPaceSec:0,missionContinue:false} : {paceIdx:1,playMode:'free',radiusIdx:1,missionGoalM:0,missionGoalSec:0,missionGoalPaceSec:0,missionContinue:false}
  const createdRoom={...room,config}
  const onStart=vi.fn().mockResolvedValue(true)
  rooms.createRoom.mockResolvedValue({room:createdRoom,player:{id:'host'}})

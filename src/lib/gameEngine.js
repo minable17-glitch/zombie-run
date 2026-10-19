@@ -25,6 +25,17 @@ export const START_HEALTH = 6
 // 목표보다 느리게 뛰면 좀비가 따라잡고, 유지/추월하면 거리가 벌어지는 방식 (프리셋은 lib/gameConfig.js)
 export const LIVE_PACE_WINDOW_MS = 30000 // 실시간 페이스 계산에 쓰는 최근 구간(30초)
 export const LIVE_PACE_MIN_WINDOW_SEC = 6 // 이보다 짧은 구간에서는 페이스가 안 흔들리게 표시 안 함
+export const PACE_HOLD_THRESHOLD = 0.97 // 목표 페이스의 이 비율 이상이면 "유지 중"으로 침 (HUD의 "뒤처짐" 표시와 같은 기준)
+
+// 최근 LIVE_PACE_WINDOW_MS 구간의 평균 속도 — HUD 표시와 페이스 유지 미션 판정에 공용으로 씀
+export function computeLivePaceMps(game) {
+  if (game.paceSamples.length < 2) return null
+  const first = game.paceSamples[0]
+  const last = game.paceSamples[game.paceSamples.length - 1]
+  const dtSec = (last.t - first.t) / 1000
+  if (dtSec < LIVE_PACE_MIN_WINDOW_SEC) return null
+  return (last.d - first.d) / dtSec
+}
 
 // 제한구역 모드: 시작 위치를 중심으로 반경을 정해서 그 안에서만 좀비/아이템이 등장하고,
 // 그 밖에 계속 나가 있으면(누적 시간 기준) 생명이 줄어듦
@@ -103,9 +114,12 @@ export function makeInitialGame() {
     roomNickname: null,
     missionGoalM: 0, // 거리 목표런의 목표 거리(미터). 0이면 목표 없는 일반 생존 러닝
     missionGoalSec: 0, // 시간 목표런의 목표 시간(초). missionGoalM과 동시에 쓰지 않음(미션은 하나만 선택)
+    missionGoalPaceSec: 0, // 페이스 유지런의 목표 누적 유지 시간(초). 다른 missionGoal*과 동시에 쓰지 않음
     missionContinue: false, // 목표 도달 후에도 계속 달릴지(true) 바로 종료할지(false) — 목표가 있을 때만 의미 있음
     goalReachedSec: null, // 거리 목표에 도달한 시점의 elapsedSec. 아직 도달 전이면 null
     goalReachedDistanceM: null, // 시간 목표에 도달한 시점의 distance. 아직 도달 전이면 null
+    paceHoldSec: 0, // 지금까지 누적된 "목표 페이스 이상 유지" 시간(초)
+    goalReachedPaceSec: null, // 페이스 유지 목표에 도달한 시점의 elapsedSec. 아직 도달 전이면 null
     schoolLinked: false, // 학교연동(매 1런) 러너의 생존 러닝일 때만 아래 멈춤 예산이 동작함
     pauseSegment: 0, // 지금 멈춤 예산을 계산한 1km 구간 (Math.floor(distance/1000))
     pauseBudgetSec: SCHOOL_PAUSE_BUDGET_SEC, // 이번 구간에서 남은 멈춤 예산(초)
@@ -299,6 +313,18 @@ export function advanceGame(game, dt, now) {
       game.goalReachedDistanceM = game.distance
       emit(game.missionContinue ? '목표 시간에 도달했어요! 계속 달리거나 지금 종료할 수 있어요.' : '목표 시간에 도달했어요!')
       if (!game.missionContinue) return { messages, endReason: 'goal_reached' }
+    }
+
+    if (game.missionGoalPaceSec > 0 && game.goalReachedPaceSec == null) {
+      const livePaceMps = computeLivePaceMps(game)
+      if (livePaceMps != null && livePaceMps >= game.targetPaceMps * PACE_HOLD_THRESHOLD) {
+        game.paceHoldSec += dt
+        if (game.paceHoldSec >= game.missionGoalPaceSec) {
+          game.goalReachedPaceSec = game.elapsedSec
+          emit(game.missionContinue ? '목표 페이스 유지 시간을 채웠어요! 계속 달리거나 지금 종료할 수 있어요.' : '목표 페이스 유지 시간을 채웠어요!')
+          if (!game.missionContinue) return { messages, endReason: 'goal_reached' }
+        }
+      }
     }
 
     if (game.playerPos && !frozen && game.elapsedSec >= game.nextWaveSec) {

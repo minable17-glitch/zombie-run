@@ -2,6 +2,7 @@ import { test, expect } from 'vitest'
 import {
   advanceGame, applyStartSetup, makeInitialGame, updatePosition, summonFirstWave, turnAround,
   startPause, endPause, checkPauseAutoResume, pauseStatus, SCHOOL_PAUSE_BUDGET_SEC, SCHOOL_PAUSE_AUTO_RESUME_MS,
+  computeLivePaceMps,
 } from '../src/lib/gameEngine.js'
 import { haversineDistance } from '../src/lib/geo.js'
 import { insidePolygon } from '../src/lib/playArea.js'
@@ -291,4 +292,59 @@ test('reaching the time goal while set to continue keeps the run going and freez
   result = advanceGame(game, 1, 2000)
   expect(result.endReason).toBeNull()
   expect(game.goalReachedDistanceM).toBe(2000) // doesn't keep moving once already reached
+})
+
+test('computeLivePaceMps needs a minimum window and ignores a too-short one', () => {
+  const game = playing()
+  expect(computeLivePaceMps(game)).toBeNull() // no samples yet
+  game.paceSamples = [{ t: 0, d: 0 }, { t: 3000, d: 10 }] // only 3s, under LIVE_PACE_MIN_WINDOW_SEC
+  expect(computeLivePaceMps(game)).toBeNull()
+  game.paceSamples = [{ t: 0, d: 0 }, { t: 10000, d: 25 }]
+  expect(computeLivePaceMps(game)).toBe(2.5)
+})
+
+test('holding pace accumulates toward the pace-hold goal and ends the run when not set to continue', () => {
+  const game = playing()
+  game.targetPaceMps = 2
+  game.missionGoalPaceSec = 10
+  game.paceSamples = [{ t: 0, d: 0 }, { t: 10000, d: 20 }] // 20m/10s = 2m/s, exactly at target pace
+  game.paceHoldSec = 8
+  let result = advanceGame(game, 1, 20000)
+  expect(result.endReason).toBeNull()
+  expect(game.paceHoldSec).toBe(9)
+  expect(game.goalReachedPaceSec).toBeNull()
+  result = advanceGame(game, 1, 21000)
+  expect(result.endReason).toBe('goal_reached')
+  expect(game.paceHoldSec).toBe(10)
+  expect(game.goalReachedPaceSec).toBe(game.elapsedSec)
+  expect(result.messages.some(m => m.includes('페이스 유지'))).toBe(true)
+})
+
+test('falling behind pace does not accumulate hold time', () => {
+  const game = playing()
+  game.targetPaceMps = 2
+  game.missionGoalPaceSec = 10
+  game.paceSamples = [{ t: 0, d: 0 }, { t: 10000, d: 10 }] // 10m/10s = 1m/s, well under target
+  game.paceHoldSec = 5
+  const result = advanceGame(game, 1, 20000)
+  expect(result.endReason).toBeNull()
+  expect(game.paceHoldSec).toBe(5)
+})
+
+test('reaching the pace-hold goal while set to continue keeps the run going and only records the time once', () => {
+  const game = playing()
+  game.targetPaceMps = 2
+  game.missionGoalPaceSec = 10
+  game.missionContinue = true
+  game.paceSamples = [{ t: 0, d: 0 }, { t: 10000, d: 20 }]
+  game.paceHoldSec = 9
+  let result = advanceGame(game, 1, 20000)
+  expect(result.endReason).toBeNull()
+  expect(game.paceHoldSec).toBe(10)
+  const firstReachedAt = game.goalReachedPaceSec
+  expect(firstReachedAt).toBe(game.elapsedSec)
+  result = advanceGame(game, 1, 21000)
+  expect(result.endReason).toBeNull()
+  expect(game.goalReachedPaceSec).toBe(firstReachedAt) // doesn't keep moving once already reached
+  expect(game.paceHoldSec).toBe(10) // stops accumulating once the goal is already reached
 })
