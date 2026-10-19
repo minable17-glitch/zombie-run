@@ -25,6 +25,7 @@ import { ensureOwnProfile } from './lib/authHelpers.js'
 import { accountLanding, passwordRecoveryExpired } from './lib/authLanding.js'
 import { readRoom, updateRoomStat } from './lib/roomApi.js'
 import { readFix, GPS_STALE_MS } from './lib/gameSafety.js'
+import { watchPosition as geoWatchPosition, clearWatch as geoClearWatch, getCurrentPosition as geoGetCurrentPosition } from './lib/nativeLocation.js'
 import { isLocalTestMode, makeTestPosition } from './lib/testMode.js'
 import { insideArea } from './lib/playArea.js'
 import { usableChasePath } from './lib/routePressure.js'
@@ -179,7 +180,7 @@ function GameApp() {
     (reason) => {
       if (game.status !== 'playing') return
       game.status = 'gameover'
-      if (watchIdRef.current != null) navigator.geolocation.clearWatch(watchIdRef.current)
+      if (watchIdRef.current != null) geoClearWatch(watchIdRef.current)
       watchIdRef.current = null
       game.gameOverReason = reason
       clearInterval(tickIntervalRef.current)
@@ -268,7 +269,7 @@ function GameApp() {
   useEffect(() => {
     return () => {
       startRequestRef.current += 1
-      if (watchIdRef.current != null) navigator.geolocation.clearWatch(watchIdRef.current)
+      if (watchIdRef.current != null) geoClearWatch(watchIdRef.current)
       clearInterval(tickIntervalRef.current)
       clearTimeout(toastTimerRef.current)
       clearInterval(teammatesPollRef.current)
@@ -347,7 +348,7 @@ function GameApp() {
         setSaveState('')
         setPersonalBoard(null)
         setPersonalResult(null)
-        if (watchIdRef.current != null) navigator.geolocation.clearWatch(watchIdRef.current)
+        if (watchIdRef.current != null) geoClearWatch(watchIdRef.current)
         Object.assign(game, makeInitialGame(), {
           status: 'playing', playerPos: startPos, lastPos: startPos, lastFix: startPos,
           movementAnchor: startPos, lastTickAt: Date.now(),
@@ -375,9 +376,8 @@ function GameApp() {
             tick()
           }, 1000)
         } else {
-          watchIdRef.current = navigator.geolocation.watchPosition(handlePosition,
-            () => { game.lastFix = null; setGeoError('GPS 신호가 끊겨 게임이 잠시 멈춰요.') },
-            { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 })
+          watchIdRef.current = geoWatchPosition(handlePosition,
+            () => { game.lastFix = null; setGeoError('GPS 신호가 끊겨 게임이 잠시 멈춰요.') })
           tickIntervalRef.current = setInterval(tick, 1000)
         }
         if (session?.roomId || soloId) {
@@ -403,9 +403,9 @@ function GameApp() {
       if (isLocalTestMode()) {
         queueMicrotask(() => beginWithPosition(makeTestPosition()))
       } else {
-        navigator.geolocation.getCurrentPosition(beginWithPosition,
+        geoGetCurrentPosition(beginWithPosition,
           () => fail('위치를 확인하지 못했어요. 위치 권한을 확인하고 다시 시도해주세요.'),
-          { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 })
+          { timeout: 20000 })
       }
     })).catch(() => {
       if (request === startRequestRef.current) {

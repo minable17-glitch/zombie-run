@@ -1,0 +1,8 @@
+{
+  "appId": "com.minable17.zombierun",
+  "appName": "좀비런",
+  "webDir": "dist",
+  "android": {
+    "useLegacyBridge": true
+  }
+}

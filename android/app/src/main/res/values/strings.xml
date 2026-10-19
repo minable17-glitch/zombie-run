@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">좀비런</string>
+    <string name="title_activity_main">좀비런</string>
+    <string name="package_name">com.minable17.zombierun</string>
+    <string name="custom_url_scheme">com.minable17.zombierun</string>
+    <string name="capacitor_background_geolocation_notification_channel_name">좀비런 위치 추적</string>
+    <string name="capacitor_background_geolocation_notification_color">#16a34a</string>
+</resources>
