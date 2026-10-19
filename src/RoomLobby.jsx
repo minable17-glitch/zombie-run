@@ -8,6 +8,7 @@ import {
 } from './lib/gameConfig.js'
 import { formatDistance } from './lib/geo.js'
 import * as rooms from './lib/roomApi.js'
+import { useNumericText } from './lib/useNumericText.js'
 
 const POLL_MS = 3000
 
@@ -23,9 +24,12 @@ export default function RoomLobby({ zombieMaps = [], onBack, onStart, startError
   const [radiusIdx, setRadiusIdx] = useState(DEFAULT_RADIUS_IDX)
   const [mapId, setMapId] = useState(null)
   const [missionKind, setMissionKind] = useState('none') // 'none' | 'distance' | 'time' | 'pace'
-  const [missionDistanceKm, setMissionDistanceKm] = useState(GOAL_DISTANCE_PRESETS[DEFAULT_GOAL_IDX] / 1000)
-  const [missionTimeMin, setMissionTimeMin] = useState(GOAL_TIME_PRESETS[DEFAULT_TIME_IDX] / 60)
-  const [missionPaceHoldMin, setMissionPaceHoldMin] = useState(GOAL_PACE_HOLD_PRESETS[DEFAULT_PACE_HOLD_IDX] / 60)
+  const [missionDistanceKm, missionDistanceKmText, setMissionDistanceKmText, setMissionDistanceKm] =
+    useNumericText(GOAL_DISTANCE_PRESETS[DEFAULT_GOAL_IDX] / 1000, MIN_GOAL_DISTANCE_KM, MAX_GOAL_DISTANCE_KM)
+  const [missionTimeMin, missionTimeMinText, setMissionTimeMinText, setMissionTimeMin] =
+    useNumericText(GOAL_TIME_PRESETS[DEFAULT_TIME_IDX] / 60, MIN_GOAL_TIME_MIN, MAX_GOAL_TIME_MIN)
+  const [missionPaceHoldMin, missionPaceHoldMinText, setMissionPaceHoldMinText, setMissionPaceHoldMin] =
+    useNumericText(GOAL_PACE_HOLD_PRESETS[DEFAULT_PACE_HOLD_IDX] / 60, MIN_GOAL_PACE_HOLD_MIN, MAX_GOAL_PACE_HOLD_MIN)
   const [missionContinue, setMissionContinue] = useState(false)
   const missionGoalM = missionKind === 'distance' ? Math.round(missionDistanceKm * 1000) : 0
   const missionGoalSec = missionKind === 'time' ? Math.round(missionTimeMin * 60) : 0
@@ -301,8 +305,8 @@ export default function RoomLobby({ zombieMaps = [], onBack, onStart, startError
               </div>
               <label className="zr-personal-label">직접 입력 (km)
                 <input className="zr-admin-input" type="number" inputMode="decimal" min={MIN_GOAL_DISTANCE_KM} max={MAX_GOAL_DISTANCE_KM} step="0.1"
-                  value={missionDistanceKm}
-                  onChange={e => setMissionDistanceKm(Math.min(MAX_GOAL_DISTANCE_KM, Math.max(MIN_GOAL_DISTANCE_KM, Number(e.target.value) || MIN_GOAL_DISTANCE_KM)))} />
+                  value={missionDistanceKmText}
+                  onChange={e => setMissionDistanceKmText(e.target.value)} />
               </label>
               <p className="zr-pace-label">목표에 도달하면</p>
               <div className="zr-pace-picker zr-pace-picker-2col">
@@ -322,8 +326,8 @@ export default function RoomLobby({ zombieMaps = [], onBack, onStart, startError
               </div>
               <label className="zr-personal-label">직접 입력 (분)
                 <input className="zr-admin-input" type="number" inputMode="numeric" min={MIN_GOAL_TIME_MIN} max={MAX_GOAL_TIME_MIN} step="1"
-                  value={missionTimeMin}
-                  onChange={e => setMissionTimeMin(Math.min(MAX_GOAL_TIME_MIN, Math.max(MIN_GOAL_TIME_MIN, Number(e.target.value) || MIN_GOAL_TIME_MIN)))} />
+                  value={missionTimeMinText}
+                  onChange={e => setMissionTimeMinText(e.target.value)} />
               </label>
               <p className="zr-pace-label">목표에 도달하면</p>
               <div className="zr-pace-picker zr-pace-picker-2col">
@@ -343,8 +347,8 @@ export default function RoomLobby({ zombieMaps = [], onBack, onStart, startError
               </div>
               <label className="zr-personal-label">직접 입력 (분)
                 <input className="zr-admin-input" type="number" inputMode="numeric" min={MIN_GOAL_PACE_HOLD_MIN} max={MAX_GOAL_PACE_HOLD_MIN} step="1"
-                  value={missionPaceHoldMin}
-                  onChange={e => setMissionPaceHoldMin(Math.min(MAX_GOAL_PACE_HOLD_MIN, Math.max(MIN_GOAL_PACE_HOLD_MIN, Number(e.target.value) || MIN_GOAL_PACE_HOLD_MIN)))} />
+                  value={missionPaceHoldMinText}
+                  onChange={e => setMissionPaceHoldMinText(e.target.value)} />
               </label>
               <p className="zr-pace-label">목표에 도달하면</p>
               <div className="zr-pace-picker zr-pace-picker-2col">
