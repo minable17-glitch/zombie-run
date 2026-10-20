@@ -1,5 +1,36 @@
 # 좀비런 보안 수정 배포
 
+## 안드로이드 APK (화면 꺼도 추적되는 설치형 앱) — 2026-10-20
+
+- **이번엔 DB 마이그레이션이 없습니다.** 웹사이트(GitHub Pages)에도 영향 없고, 기존 사이트는 그대로 동작합니다.
+- Capacitor로 기존 웹앱을 감싼 안드로이드 프로젝트(`android/`)를 추가했고, `@capacitor-community/background-geolocation`(MIT)로
+  화면이 꺼지거나 다른 앱으로 전환해도 GPS를 계속 받도록 했습니다(안드로이드 포그라운드 서비스 + "좀비런 진행 중" 상시 알림).
+  `src/lib/nativeLocation.js`가 앱 안에서는 이 플러그인을, 일반 브라우저에서는 그대로 `navigator.geolocation`을 쓰도록
+  분기합니다. 게임 로직(`gameEngine.js`, `App.jsx`의 틱/판정)은 그대로입니다.
+- **빌드 방법(이 세션에서 실제로 한 순서)**:
+  1. 안드로이드 SDK: `dl.google.com`에서 command-line tools를 받아 `/opt/android-sdk`에 풀고
+     `sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"` + `--licenses` 수락.
+     클라우드 환경에서는 네트워크 허용 도메인에 `dl.google.com`을 추가해야 받아집니다(이번에 사용자가 추가함).
+  2. `android/local.properties`에 `sdk.dir=/opt/android-sdk` (이 파일은 gitignore 대상이라 세션마다 다시 만들어야 함).
+  3. 웹 번들: `VITE_SUPABASE_URL=… VITE_SUPABASE_ANON_KEY=… npm run build` — **env를 안 주면 앱 안에서 Supabase가
+     꺼진 채(개인 기록·방·랭킹 전부 비활성) 번들됩니다.** 두 값은 `.github/workflows/deploy.yml`에 있는 공개 값과 같습니다.
+     저장소에 `.env`는 두지 않았습니다(루트 `.gitignore`가 `.env`를 무시하지 않아서 커밋될 위험이 있음).
+  4. `npx cap copy android` → `cd android && gradle assembleDebug` (시스템 Gradle 8.14.3이 wrapper 요구 버전과 같아서
+     `./gradlew` 대신 써도 됨). 결과물: `android/app/build/outputs/apk/debug/app-debug.apk` (약 4.9MB).
+- **이번 APK에 대해 솔직하게 알아둘 것**:
+  - 디버그 서명 APK라 직접 설치(사이드로드) 테스트용입니다. Play 스토어 업로드용 릴리스 서명/AAB는 아직 안 만들었습니다.
+  - `VITE_ORS_API_KEY`(GitHub 시크릿)는 이 세션에 없어서 **앱 안의 좀비는 도로 경로 대신 직선으로 쫓아옵니다**(코드의 기존
+    폴백). 웹사이트와 체감이 다를 수 있습니다. 릴리스 빌드 때는 키를 넣고 빌드해야 합니다.
+  - **실제 기기로 전혀 검증하지 않았습니다.** 설치되는지, 권한 팝업이 뜨는지, 화면을 끄고 몇 분 뒤에도 거리가 계속 늘어나는지
+    전부 사용자가 확인해야 합니다. 특히 삼성/샤오미 계열은 배터리 최적화가 서비스를 죽일 수 있어
+    `설정 > 앱 > 좀비런 > 배터리 > 제한 없음`으로 바꿔야 할 수 있습니다.
+  - 플러그인 README 기준으로 백그라운드 5분 이후 WebView의 HTTP 요청이 제한될 수 있습니다(기록 전송이 밀릴 가능성).
+    해결책으로 권장되는 CapacitorHttp는 아직 안 붙였습니다. 게임 틱(`setInterval` 1초)도 화면이 꺼지면 안드로이드가
+    늦출 수 있어서, 위치는 들어와도 좀비 이동/판정이 뚝뚝 끊길 가능성이 있습니다 — 실기기 테스트 결과를 보고 판단할 부분입니다.
+  - 나중에 Play 스토어에 올릴 땐 `FOREGROUND_SERVICE_LOCATION` 사용 선언(Play Console의 포그라운드 서비스 양식)이 필요합니다.
+    `ACCESS_BACKGROUND_LOCATION`은 쓰지 않으므로 그 심사 절차는 해당 없습니다.
+- 로컬 자동 테스트 127개(소수점 입력 버그 회귀 테스트 3개 포함)와 웹 빌드, `gradle assembleDebug`가 통과했습니다.
+
 ## 페이스 유지런 미션 — 2026-10-19
 
 - **프런트엔드 배포 전에 운영 SQL Editor에서 `supabase/migrations/20261019010000_pace_hold_missions.sql`을
