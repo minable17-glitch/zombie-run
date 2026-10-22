@@ -14,6 +14,10 @@
   직선 추격, `android/local.properties`는 세션마다 재생성, 클라우드 환경에 `dl.google.com` 허용 필요)은 DEPLOYMENT.md
   맨 위 섹션에 적어뒀다. 아직 안 한 것: 릴리스 서명/AAB, CapacitorHttp(백그라운드 5분 후 HTTP 제한 대응), 앱 아이콘/
   스플래시 커스텀(지금은 Capacitor 기본 아이콘), iOS.
+- APK 다음으로, 크롬에서 사이트를 "앱 설치"할 수 있게 PWA 처리를 했다(`public/manifest.webmanifest`, `public/sw.js`,
+  `public/icons/`, `index.html` 링크, `src/main.jsx` 등록). 서비스 워커는 캐시를 전혀 하지 않는 통과형이고, APK 안에서는
+  등록을 건너뛴다. 실제 크롬에서 설치 버튼이 켜지는지는 미확인 — 사용자 피드백을 받을 것. 사용자에게 PWA는 화면 꺼짐
+  추적을 해결하지 못한다고 분명히 말해뒀다.
 - 같은 날 사용자가 실기기에서 찾은 버그: 거리/시간/페이스 "직접 입력" 칸에서 소수점을 못 찍는 문제. 원인은 매 타이핑마다
   `Number(e.target.value) || MIN`으로 클램프해서 "0"을 치는 순간 최솟값으로 튕기던 것. `src/lib/useNumericText.js`로
   표시 텍스트와 계산용 숫자를 분리해 고쳤고(App.jsx·RoomLobby.jsx 6곳), 회귀 테스트 `tests/useNumericText.test.jsx`를 넣었다.
