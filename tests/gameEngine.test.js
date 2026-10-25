@@ -308,7 +308,7 @@ function paceRun(kind, goal, metersIn10s) {
   game.targetPaceMps = 2 // 500초/km
   game.missionPaceKind = kind
   game.missionPaceGoal = goal
-  game.paceSamples = [{ t: 0, d: 0 }, { t: 10000, d: metersIn10s }]
+  game.paceSamples = [{ t: 0, d: 0 }, { t: 20000, d: metersIn10s * 2 }]
   return game
 }
 
@@ -346,7 +346,7 @@ test('slightly off pace costs score but not energy; far off drains energy to gam
   expect(game.paceZone).toBe('warn')
   expect(game.paceScore).toBe(8)
   expect(game.paceEnergy).toBe(PACE_ENERGY_START)
-  game.paceSamples = [{ t: 0, d: 0 }, { t: 10000, d: 30 }] // much too fast
+  game.paceSamples = [{ t: 0, d: 0 }, { t: 20000, d: 60 }] // much too fast
   const r1 = advanceGame(game, 1, 2000)
   expect(game.paceZone).toBe('danger')
   expect(game.paceScore).toBe(3)
@@ -391,4 +391,19 @@ test('a saved map in pace mode starts with no patrol zombies', () => {
   g.missionPaceKind = PACE_KIND.endless
   applyStartSetup(g, g.playerPos, { paceMps: 2, forcedMap: { id: 'm', center: g.playerPos, radius: 1000, routes: [[{ lat: 37, lon: 127 }, { lat: 37.01, lon: 127 }]] } })
   expect(g.zombies).toHaveLength(0)
+})
+
+test('pace judging waits for a 15s window and the danger streak only counts consecutive seconds', () => {
+  const game = paceRun(PACE_KIND.endless, 0, 10) // 1m/s — far too slow
+  game.paceSamples = [{ t: 0, d: 0 }, { t: 10000, d: 10 }] // only 10s of samples
+  advanceGame(game, 1, 1000)
+  expect(game.paceZone).toBeNull()
+  expect(game.paceEnergy).toBe(PACE_ENERGY_START)
+  game.paceSamples = [{ t: 0, d: 0 }, { t: 20000, d: 20 }]
+  advanceGame(game, 1, 2000)
+  advanceGame(game, 1, 3000)
+  expect(game.paceDangerSec).toBe(2)
+  game.paceSamples = [{ t: 0, d: 0 }, { t: 20000, d: 40 }] // back on pace
+  advanceGame(game, 1, 4000)
+  expect(game.paceDangerSec).toBe(0)
 })

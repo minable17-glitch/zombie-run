@@ -32,7 +32,7 @@ import { insideArea } from './lib/playArea.js'
 import { usableChasePath } from './lib/routePressure.js'
 import {
   makeInitialGame, applyStartSetup, advanceGame, updatePosition, findRouteCandidate, summonFirstWave, turnAround,
-  formatTime, formatPace, START_HEALTH, computeLivePaceMps, PACE_HOLD_THRESHOLD, PACE_KIND, paceMissionLabel,
+  formatTime, formatPace, START_HEALTH, computeLivePaceMps, PACE_HOLD_THRESHOLD, PACE_KIND, PACE_VIBRATE_AFTER_SEC, paceMissionLabel,
   ROOM_STAT_PUSH_SEC, ROOM_TEAMMATES_POLL_MS,
   startPause, endPause, checkPauseAutoResume, pauseStatus,
 } from './lib/gameEngine.js'
@@ -229,7 +229,11 @@ function GameApp() {
     }
     const nearest = game.playerPos && game.zombies.length
       ? Math.min(...game.zombies.map(z => haversineDistance(game.playerPos.lat, game.playerPos.lon, z.lat, z.lon))) : Infinity
-    proximityRef.current.update(nearest, now, vibrationEnabled.current && now >= game.frozenUntil)
+    // 페이스 유지런엔 좀비가 없으니, 에너지가 닳는 구간(30초 넘게 벗어남)일 때 같은 진동을 쓴다 — 에너지가 적을수록 더 세고 잦게
+    const alertDistance = game.missionPaceKind > 0
+      ? (game.paceDangerSec >= PACE_VIBRATE_AFTER_SEC ? (game.paceEnergy <= 30 ? 15 : 30) : Infinity)
+      : nearest
+    proximityRef.current.update(alertDistance, now, vibrationEnabled.current && now >= game.frozenUntil)
 
     const needsRoute = findRouteCandidate(game, now)
       if (needsRoute && ORS_API_KEY) {
@@ -902,7 +906,7 @@ function GameApp() {
           </button>
         )}
         {game.soloId && <button className="zr-badge" aria-label="내 최고 기록과 전체 랭킹" aria-expanded={showTeammates} onClick={() => setShowTeammates(v => !v)}>{personalBoard?.me ? `${personalBoard.me.rank}위` : '기록'}</button>}
-        {typeof navigator.vibrate === 'function' && <button className="zr-badge" aria-label="좀비 접근 진동" aria-pressed={vibrationOn} onClick={toggleVibration}>진동<br />{vibrationOn ? 'ON' : 'OFF'}</button>}
+        {typeof navigator.vibrate === 'function' && <button className="zr-badge" aria-label={paceRun ? '에너지 감소 진동' : '좀비 접근 진동'} aria-pressed={vibrationOn} onClick={toggleVibration}>진동<br />{vibrationOn ? 'ON' : 'OFF'}</button>}
       </div>
 
       {game.roomId && showTeammates && (

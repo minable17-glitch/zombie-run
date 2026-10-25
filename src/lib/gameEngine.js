@@ -28,12 +28,12 @@ export const LIVE_PACE_MIN_WINDOW_SEC = 6 // 이보다 짧은 구간에서는 �
 export const PACE_HOLD_THRESHOLD = 0.97 // 목표 페이스의 이 비율 이상이면 "유지 중"으로 침 (HUD의 "뒤처짐" 표시와 같은 기준)
 
 // 최근 LIVE_PACE_WINDOW_MS 구간의 평균 속도 — HUD 표시와 페이스 유지 미션 판정에 공용으로 씀
-export function computeLivePaceMps(game) {
+export function computeLivePaceMps(game, minWindowSec = LIVE_PACE_MIN_WINDOW_SEC) {
   if (game.paceSamples.length < 2) return null
   const first = game.paceSamples[0]
   const last = game.paceSamples[game.paceSamples.length - 1]
   const dtSec = (last.t - first.t) / 1000
-  if (dtSec < LIVE_PACE_MIN_WINDOW_SEC) return null
+  if (dtSec < minWindowSec) return null
   return (last.d - first.d) / dtSec
 }
 
@@ -51,10 +51,14 @@ const PACE_RATES = {
   danger: { score: -5, energy: -3 },
 }
 const PACE_DIFF_CAP_SEC = 600 // 서 있을 때처럼 거의 안 움직이면 차이를 이 값으로 둠
+// GPS 거리는 1초마다 고르게 안 쌓이고(작은 움직임은 다음 점에 몰아서 더함) 창이 짧으면 페이스가 매초 출렁여서
+// 구간이 깜빡이고 에너지가 억울하게 깎인다 — 페이스 유지런은 이 길이만큼 모인 뒤부터 판정한다
+export const PACE_MIN_WINDOW_SEC = 15
+export const PACE_VIBRATE_AFTER_SEC = 2 // 에너지가 닳는 구간에 이만큼 연속으로 있어야 진동
 
 // 지금 페이스가 목표보다 몇 초/km 느린지(+) 빠른지(-). 아직 못 재면 null
 export function paceDiffSec(game) {
-  const mps = computeLivePaceMps(game)
+  const mps = computeLivePaceMps(game, PACE_MIN_WINDOW_SEC)
   if (mps == null) return null
   if (mps <= 1000 / (1000 / game.targetPaceMps + PACE_DIFF_CAP_SEC)) return PACE_DIFF_CAP_SEC
   return 1000 / mps - 1000 / game.targetPaceMps
@@ -83,6 +87,7 @@ function advancePaceMission(game, dt, emit) {
     if (zone === 'danger' && game.paceZone !== 'danger') emit(diff > 0 ? '너무 느려요! 에너지가 줄고 있어요' : '너무 빨라요! 에너지가 줄고 있어요')
   }
   game.paceZone = zone
+  game.paceDangerSec = zone === 'danger' ? game.paceDangerSec + dt : 0
   if (game.paceEnergy <= 0) {
     game.paceCleared = false
     emit('에너지가 바닥났어요!')
@@ -185,6 +190,7 @@ export function makeInitialGame() {
     paceScore: 0,
     paceDiffSec: null, // 화면 게이지용: 목표보다 몇 초/km 느린지(+)/빠른지(-)
     paceZone: null, // 'ok' | 'warn' | 'danger' | null(측정 중)
+    paceDangerSec: 0, // 에너지가 닳는 구간에 연속으로 머문 시간 — 진동을 깜빡임 없이 울리려고
     paceCleared: null, // 목표(시간/거리)를 에너지 남긴 채 채웠으면 true, 에너지가 바닥났으면 false
     schoolLinked: false, // 학교연동(매 1런) 러너의 생존 러닝일 때만 아래 멈춤 예산이 동작함
     pauseSegment: 0, // 지금 멈춤 예산을 계산한 1km 구간 (Math.floor(distance/1000))
