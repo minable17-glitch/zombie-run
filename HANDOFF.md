@@ -4,6 +4,11 @@
 
 ## 1. 마지막 작업과 다음 단계
 
+- 가장 최근 작업은 **페이스 유지런 2판**(에너지 바 + 점수, 좀비 없음, 목표 시간/거리/무제한 모드)이다. 규칙·숫자·DB·배포 순서는
+  DEPLOYMENT.md 맨 위. 엔진은 `gameEngine.js` `advancePaceMission`(미션 중이면 좀비·아이템 로직 전에 바로 return), 게이지는
+  `src/PaceGauge.jsx`. 사용자가 고른 것: 종료 = 목표 채우기(또는 무제한), 순위 = 점수, 좀비 없음, 구간 ±15/±30초.
+  실기기 미검증 — 사용자가 뛰어 보고 숫자 조정을 요청할 가능성이 높다.
+
 - 가장 최근 작업은 **안드로이드 APK(설치형 앱)** 이다. 사용자가 "화면 꺼도 추적되는 진짜 앱"을 골랐고(PWA/단순 WebView
   포장은 거절), Capacitor로 `android/` 프로젝트를 만들고 `@capacitor-community/background-geolocation`(MIT)으로 포그라운드
   서비스 기반 백그라운드 GPS를 붙였다. `src/lib/nativeLocation.js`가 앱/브라우저를 분기하고 `App.jsx`는 그걸 통해서만

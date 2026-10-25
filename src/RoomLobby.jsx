@@ -4,11 +4,11 @@ import {
   AREA_RADIUS_PRESETS, DEFAULT_PACE_IDX, DEFAULT_RADIUS_IDX, PACE_PRESETS,
   GOAL_DISTANCE_PRESETS, DEFAULT_GOAL_IDX, MIN_GOAL_DISTANCE_KM, MAX_GOAL_DISTANCE_KM,
   GOAL_TIME_PRESETS, DEFAULT_TIME_IDX, MIN_GOAL_TIME_MIN, MAX_GOAL_TIME_MIN,
-  GOAL_PACE_HOLD_PRESETS, DEFAULT_PACE_HOLD_IDX, MIN_GOAL_PACE_HOLD_MIN, MAX_GOAL_PACE_HOLD_MIN,
 } from './lib/gameConfig.js'
 import { formatDistance } from './lib/geo.js'
 import * as rooms from './lib/roomApi.js'
 import { useNumericText } from './lib/useNumericText.js'
+import { PACE_KIND, paceMissionLabel } from './lib/gameEngine.js'
 
 const POLL_MS = 3000
 
@@ -28,12 +28,13 @@ export default function RoomLobby({ zombieMaps = [], onBack, onStart, startError
     useNumericText(GOAL_DISTANCE_PRESETS[DEFAULT_GOAL_IDX] / 1000, MIN_GOAL_DISTANCE_KM, MAX_GOAL_DISTANCE_KM)
   const [missionTimeMin, missionTimeMinText, setMissionTimeMinText, setMissionTimeMin] =
     useNumericText(GOAL_TIME_PRESETS[DEFAULT_TIME_IDX] / 60, MIN_GOAL_TIME_MIN, MAX_GOAL_TIME_MIN)
-  const [missionPaceHoldMin, missionPaceHoldMinText, setMissionPaceHoldMinText, setMissionPaceHoldMin] =
-    useNumericText(GOAL_PACE_HOLD_PRESETS[DEFAULT_PACE_HOLD_IDX] / 60, MIN_GOAL_PACE_HOLD_MIN, MAX_GOAL_PACE_HOLD_MIN)
+  const [paceMode, setPaceMode] = useState('time') // 페이스 유지런: 'time' | 'distance' | 'endless'
   const [missionContinue, setMissionContinue] = useState(false)
   const missionGoalM = missionKind === 'distance' ? Math.round(missionDistanceKm * 1000) : 0
   const missionGoalSec = missionKind === 'time' ? Math.round(missionTimeMin * 60) : 0
-  const missionGoalPaceSec = missionKind === 'pace' ? Math.round(missionPaceHoldMin * 60) : 0
+  const missionPaceKind = missionKind === 'pace' ? PACE_KIND[paceMode] : 0
+  const missionPaceGoal = missionPaceKind === PACE_KIND.time ? Math.round(missionTimeMin * 60)
+    : missionPaceKind === PACE_KIND.distance ? Math.round(missionDistanceKm * 1000) : 0
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -132,7 +133,7 @@ export default function RoomLobby({ zombieMaps = [], onBack, onStart, startError
     try {
       await rooms.ensureRoomIdentity()
       if (!alive.current) return
-      const config = mapId ? { paceIdx, mapId, missionGoalM, missionGoalSec, missionGoalPaceSec, missionContinue } : { paceIdx, playMode, radiusIdx, missionGoalM, missionGoalSec, missionGoalPaceSec, missionContinue }
+      const config = mapId ? { paceIdx, mapId, missionGoalM, missionGoalSec, missionPaceKind, missionPaceGoal, missionContinue } : { paceIdx, playMode, radiusIdx, missionGoalM, missionGoalSec, missionPaceKind, missionPaceGoal, missionContinue }
       const result = create
         ? await rooms.createRoom(name, config)
         : await rooms.joinRoom(joinCode.trim().toUpperCase(), name)
@@ -339,23 +340,36 @@ export default function RoomLobby({ zombieMaps = [], onBack, onStart, startError
           )}
           {missionKind === 'pace' && (
             <>
-              <div className="zr-pace-picker">
-                {GOAL_PACE_HOLD_PRESETS.map(sec => (
-                  <button key={sec} className={missionPaceHoldMin === sec / 60 ? 'zr-pace-btn zr-pace-btn-on' : 'zr-pace-btn'}
-                    onClick={() => setMissionPaceHoldMin(sec / 60)}>{sec / 60}분</button>
+              <div className="zr-pace-picker zr-pace-picker-3col">
+                {[['time', '목표 시간'], ['distance', '목표 거리'], ['endless', '무제한']].map(([key, label]) => (
+                  <button key={key} className={paceMode === key ? 'zr-pace-btn zr-pace-btn-on' : 'zr-pace-btn'} onClick={() => setPaceMode(key)}>{label}</button>
                 ))}
               </div>
-              <label className="zr-personal-label">직접 입력 (분)
-                <input className="zr-admin-input" type="number" inputMode="numeric" min={MIN_GOAL_PACE_HOLD_MIN} max={MAX_GOAL_PACE_HOLD_MIN} step="1"
-                  value={missionPaceHoldMinText}
-                  onChange={e => setMissionPaceHoldMinText(e.target.value)} />
-              </label>
-              <p className="zr-pace-label">목표에 도달하면</p>
-              <div className="zr-pace-picker zr-pace-picker-2col">
-                <button className={!missionContinue ? 'zr-pace-btn zr-pace-btn-on' : 'zr-pace-btn'} onClick={() => setMissionContinue(false)}>바로 종료</button>
-                <button className={missionContinue ? 'zr-pace-btn zr-pace-btn-on' : 'zr-pace-btn'} onClick={() => setMissionContinue(true)}>계속 달리기</button>
-              </div>
-              <p className="zr-pace-hint">목표 페이스 이상으로 달린 시간을 채운 속도로 순위를 매겨요 · 생존 랭킹과는 별도예요.</p>
+              {paceMode === 'time' && <>
+                <div className="zr-pace-picker">
+                  {GOAL_TIME_PRESETS.map(sec => (
+                    <button key={sec} className={missionTimeMin === sec / 60 ? 'zr-pace-btn zr-pace-btn-on' : 'zr-pace-btn'}
+                      onClick={() => setMissionTimeMin(sec / 60)}>{sec / 60}분</button>
+                  ))}
+                </div>
+                <label className="zr-personal-label">직접 입력 (분)
+                  <input className="zr-admin-input" type="number" inputMode="numeric" min={MIN_GOAL_TIME_MIN} max={MAX_GOAL_TIME_MIN} step="1"
+                    value={missionTimeMinText} onChange={e => setMissionTimeMinText(e.target.value)} />
+                </label>
+              </>}
+              {paceMode === 'distance' && <>
+                <div className="zr-pace-picker">
+                  {GOAL_DISTANCE_PRESETS.map(d => (
+                    <button key={d} className={missionDistanceKm === d / 1000 ? 'zr-pace-btn zr-pace-btn-on' : 'zr-pace-btn'}
+                      onClick={() => setMissionDistanceKm(d / 1000)}>{formatDistance(d)}</button>
+                  ))}
+                </div>
+                <label className="zr-personal-label">직접 입력 (km)
+                  <input className="zr-admin-input" type="number" inputMode="decimal" min={MIN_GOAL_DISTANCE_KM} max={MAX_GOAL_DISTANCE_KM} step="0.1"
+                    value={missionDistanceKmText} onChange={e => setMissionDistanceKmText(e.target.value)} />
+                </label>
+              </>}
+              <p className="zr-pace-hint">좀비 없이 목표 페이스를 지켜요. ±15초 안이면 점수·에너지 ↑, 30초 넘게 벗어나면 에너지가 줄고 0이면 게임오버 · 점수로 순위</p>
             </>
           )}
           {error && <p className="zr-error">{error}</p>}
@@ -410,7 +424,7 @@ export default function RoomLobby({ zombieMaps = [], onBack, onStart, startError
         <p className="zr-mode-description">{room?.config?.mapId ? '저장된 맵' : room?.config?.playMode === 'restricted' ? '제한구역 모드' : '자유 모드'} · {
           room?.config?.missionGoalM > 0 ? `거리 목표런 · 목표 ${formatDistance(room.config.missionGoalM)}`
           : room?.config?.missionGoalSec > 0 ? `시간 목표런 · 목표 ${Math.round(room.config.missionGoalSec / 60)}분`
-          : room?.config?.missionGoalPaceSec > 0 ? `페이스 유지런 · 목표 ${Math.round(room.config.missionGoalPaceSec / 60)}분`
+          : room?.config?.missionPaceKind > 0 ? `페이스 유지런 · ${paceMissionLabel(room.config.missionPaceKind, room.config.missionPaceGoal)}`
           : '생존 랭킹'
         }</p>
         <p className="zr-ranking-note">같은 방 참가자끼리 경쟁합니다. 게임 지도에서 내 순위를 확인하세요.</p>

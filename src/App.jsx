@@ -6,6 +6,7 @@ import RunDisplay from './RunDisplay.jsx'
 import GameIcon from './GameIcon.jsx'
 import Leaderboard from './Leaderboard.jsx'
 import PersonalBoard from './PersonalBoard.jsx'
+import PaceGauge from './PaceGauge.jsx'
 import { startSolo, updateSolo, soloBoard } from './lib/runnerApi.js'
 import { rankPlayers } from './lib/leaderboard.js'
 import { createProximityAlert } from './lib/proximityAlert.js'
@@ -17,7 +18,6 @@ import {
   AREA_RADIUS_PRESETS, DEFAULT_PACE_IDX, DEFAULT_RADIUS_IDX, PACE_PRESETS,
   GOAL_DISTANCE_PRESETS, DEFAULT_GOAL_IDX, MIN_GOAL_DISTANCE_KM, MAX_GOAL_DISTANCE_KM,
   GOAL_TIME_PRESETS, DEFAULT_TIME_IDX, MIN_GOAL_TIME_MIN, MAX_GOAL_TIME_MIN,
-  GOAL_PACE_HOLD_PRESETS, DEFAULT_PACE_HOLD_IDX, MIN_GOAL_PACE_HOLD_MIN, MAX_GOAL_PACE_HOLD_MIN,
 } from './lib/gameConfig.js'
 import { fetchZombieMaps } from './lib/zombieMaps.js'
 import { useBackableStep } from './lib/useBackableStep.js'
@@ -32,7 +32,7 @@ import { insideArea } from './lib/playArea.js'
 import { usableChasePath } from './lib/routePressure.js'
 import {
   makeInitialGame, applyStartSetup, advanceGame, updatePosition, findRouteCandidate, summonFirstWave, turnAround,
-  formatTime, formatPace, START_HEALTH, computeLivePaceMps, PACE_HOLD_THRESHOLD,
+  formatTime, formatPace, START_HEALTH, computeLivePaceMps, PACE_HOLD_THRESHOLD, PACE_KIND, paceMissionLabel,
   ROOM_STAT_PUSH_SEC, ROOM_TEAMMATES_POLL_MS,
   startPause, endPause, checkPauseAutoResume, pauseStatus,
 } from './lib/gameEngine.js'
@@ -53,6 +53,9 @@ const loadingScreen = <div className="zr-screen zr-start"><p role="status">화�
 export default function App() {
   return <Suspense fallback={loadingScreen}><GameApp /></Suspense>
 }
+
+// 페이스 유지런이면 점수·완주 여부를 기록 전송에 같이 싣는다
+const paceReport = game => game.missionPaceKind > 0 ? { paceScore: Math.floor(game.paceScore), paceCleared: game.paceCleared } : {}
 
 function GameApp() {
   const gameRef = useRef(null)
@@ -78,12 +81,14 @@ function GameApp() {
     useNumericText(GOAL_DISTANCE_PRESETS[DEFAULT_GOAL_IDX] / 1000, MIN_GOAL_DISTANCE_KM, MAX_GOAL_DISTANCE_KM)
   const [missionTimeMin, missionTimeMinText, setMissionTimeMinText, setMissionTimeMin] =
     useNumericText(GOAL_TIME_PRESETS[DEFAULT_TIME_IDX] / 60, MIN_GOAL_TIME_MIN, MAX_GOAL_TIME_MIN)
-  const [missionPaceHoldMin, missionPaceHoldMinText, setMissionPaceHoldMinText, setMissionPaceHoldMin] =
-    useNumericText(GOAL_PACE_HOLD_PRESETS[DEFAULT_PACE_HOLD_IDX] / 60, MIN_GOAL_PACE_HOLD_MIN, MAX_GOAL_PACE_HOLD_MIN)
+  const [paceMode, setPaceMode] = useState('time') // 페이스 유지런: 'time' | 'distance' | 'endless'
   const [missionContinue, setMissionContinue] = useState(false)
   const missionGoalM = missionKind === 'distance' ? Math.round(missionDistanceKm * 1000) : 0
   const missionGoalSec = missionKind === 'time' ? Math.round(missionTimeMin * 60) : 0
-  const missionGoalPaceSec = missionKind === 'pace' ? Math.round(missionPaceHoldMin * 60) : 0
+  // 페이스 유지런의 목표값은 거리/시간 목표런 입력칸을 같이 쓴다
+  const missionPaceKind = missionKind === 'pace' ? PACE_KIND[paceMode] : 0
+  const missionPaceGoal = missionPaceKind === PACE_KIND.time ? Math.round(missionTimeMin * 60)
+    : missionPaceKind === PACE_KIND.distance ? Math.round(missionDistanceKm * 1000) : 0
   const [toastMsg, setToastMsg] = useState('')
   const toastTimerRef = useRef(null)
   const watchIdRef = useRef(null)
@@ -192,7 +197,7 @@ function GameApp() {
       if (game.roomId || game.soloId) {
         setSaveState('saving')
         reporterRef.current?.submit({ distance: game.distance, health: game.health,
-          elapsed: game.elapsedSec, status: reason === 'manual' ? 'finished' : 'caught', paceReachedSec: game.goalReachedPaceSec })
+          elapsed: game.elapsedSec, status: reason === 'manual' ? 'finished' : 'caught', ...paceReport(game) })
       }
       rerender()
     },
@@ -251,7 +256,7 @@ function GameApp() {
 
     if ((game.roomId || game.soloId) && now - game.lastStatAt >= ROOM_STAT_PUSH_SEC * 1000) {
       game.lastStatAt = now
-      reporterRef.current?.submit({ distance: game.distance, health: game.health, elapsed: game.elapsedSec, status: 'alive', paceReachedSec: game.goalReachedPaceSec })
+      reporterRef.current?.submit({ distance: game.distance, health: game.health, elapsed: game.elapsedSec, status: 'alive', ...paceReport(game) })
     }
 
     rerender()
@@ -362,7 +367,8 @@ function GameApp() {
           soloNickname: session?.soloRunner?.nickname ?? null,
           schoolLinked: Boolean(session?.soloRunner?.schoolLinkedAt),
           missionGoalM: config.missionGoalM || 0, missionGoalSec: config.missionGoalSec || 0,
-          missionGoalPaceSec: config.missionGoalPaceSec || 0, missionContinue: Boolean(config.missionContinue),
+          missionPaceKind: config.missionPaceKind || 0, missionPaceGoal: config.missionPaceGoal || 0,
+          missionContinue: Boolean(config.missionContinue),
         })
         const matched = applyStartSetup(game, startPos, {
           paceMps: (PACE_PRESETS[config.paceIdx] ?? PACE_PRESETS[DEFAULT_PACE_IDX]).mps,
@@ -391,7 +397,7 @@ function GameApp() {
               if (soloId) {
                 const result = await updateSolo(soloId, s)
                 if (game.runId === runId && s.status !== 'alive') setPersonalResult(result)
-              } else await updateRoomStat(session.roomId, s.distance, s.health, s.status, s.elapsed, s.paceReachedSec)
+              } else await updateRoomStat(session.roomId, s.distance, s.health, s.status, s.elapsed, s)
             },
             s => { if (game.runId === runId) { setSaveState(s.status === 'alive' ? '' : 'saved'); void pollTeammates() } },
             () => { if (game.runId === runId) setSaveState('error') },
@@ -442,8 +448,8 @@ function GameApp() {
 
   const requestLocationAndStart = useCallback(() => {
     if (supabase && !isLocalTestMode()) { refreshZombieMaps(); setGeoError(''); setMode('personal'); return }
-    return startRun({ paceIdx, playMode, radiusIdx, missionGoalM, missionGoalSec, missionGoalPaceSec, missionContinue })
-  }, [startRun, paceIdx, playMode, radiusIdx, missionGoalM, missionGoalSec, missionGoalPaceSec, missionContinue, setMode])
+    return startRun({ paceIdx, playMode, radiusIdx, missionGoalM, missionGoalSec, missionPaceKind, missionPaceGoal, missionContinue })
+  }, [startRun, paceIdx, playMode, radiusIdx, missionGoalM, missionGoalSec, missionPaceKind, missionPaceGoal, missionContinue, setMode])
 
   const finishRun = useCallback(() => endGame('manual'), [endGame])
 
@@ -513,7 +519,7 @@ function GameApp() {
   }
 
   if (mode === 'personal') {
-    return <PersonalRunner config={{paceIdx,playMode,radiusIdx,missionGoalM,missionGoalSec,missionGoalPaceSec,missionContinue}} zombieMaps={zombieMaps} onBack={() => setMode('game')} startError={geoError}
+    return <PersonalRunner config={{paceIdx,playMode,radiusIdx,missionGoalM,missionGoalSec,missionPaceKind,missionPaceGoal,missionContinue}} zombieMaps={zombieMaps} onBack={() => setMode('game')} startError={geoError}
       onStart={async (config, session) => {
         const started = await startRun(config, session)
         if (started) setMode('game')
@@ -544,7 +550,7 @@ function GameApp() {
           <p className="zr-eyebrow">READY TO RUN</p>
           <h2 className="zr-title">오늘의 러닝 설정</h2>
           <p className="zr-subtitle">추격 속도를 정하고, 출발하세요.</p>
-          <p className="zr-pace-label">목표 페이스 (좀비가 이 속도로 쫓아와요)</p>
+          <p className="zr-pace-label">{missionKind === 'pace' ? '목표 페이스 (이 페이스를 지켜요)' : '목표 페이스 (좀비가 이 속도로 쫓아와요)'}</p>
           <div className="zr-pace-picker">
             {PACE_PRESETS.map((p, i) => (
               <button
@@ -657,26 +663,42 @@ function GameApp() {
           )}
           {missionKind === 'pace' && (
             <>
-              <p className="zr-pace-label">목표 유지 시간</p>
-              <div className="zr-pace-picker">
-                {GOAL_PACE_HOLD_PRESETS.map(sec => (
-                  <button key={sec} aria-pressed={missionPaceHoldMin === sec / 60} className={missionPaceHoldMin === sec / 60 ? 'zr-pace-btn zr-pace-btn-on' : 'zr-pace-btn'}
-                    onClick={() => setMissionPaceHoldMin(sec / 60)}>{sec / 60}분</button>
+              <p className="zr-pace-label">모드</p>
+              <div className="zr-pace-picker zr-pace-picker-3col">
+                {[['time', '목표 시간'], ['distance', '목표 거리'], ['endless', '무제한']].map(([key, label]) => (
+                  <button key={key} aria-pressed={paceMode === key} className={paceMode === key ? 'zr-pace-btn zr-pace-btn-on' : 'zr-pace-btn'}
+                    onClick={() => setPaceMode(key)}>{label}</button>
                 ))}
               </div>
-              <label className="zr-personal-label">직접 입력 (분)
-                <input className="zr-admin-input" type="number" inputMode="numeric" min={MIN_GOAL_PACE_HOLD_MIN} max={MAX_GOAL_PACE_HOLD_MIN} step="1"
-                  value={missionPaceHoldMinText}
-                  onChange={e => setMissionPaceHoldMinText(e.target.value)} />
-              </label>
-              <p className="zr-pace-label">목표에 도달하면</p>
-              <div className="zr-pace-picker zr-pace-picker-2col">
-                <button aria-pressed={!missionContinue} className={!missionContinue ? 'zr-pace-btn zr-pace-btn-on' : 'zr-pace-btn'}
-                  onClick={() => setMissionContinue(false)}>바로 종료</button>
-                <button aria-pressed={missionContinue} className={missionContinue ? 'zr-pace-btn zr-pace-btn-on' : 'zr-pace-btn'}
-                  onClick={() => setMissionContinue(true)}>계속 달리기</button>
-              </div>
-              <p className="zr-mode-description">목표 페이스 이상으로 달린 시간을 채운 속도로 순위를 매겨요 · 생존 랭킹과는 별도예요.</p>
+              {paceMode === 'time' && <>
+                <div className="zr-pace-picker">
+                  {GOAL_TIME_PRESETS.map(sec => (
+                    <button key={sec} aria-pressed={missionTimeMin === sec / 60} className={missionTimeMin === sec / 60 ? 'zr-pace-btn zr-pace-btn-on' : 'zr-pace-btn'}
+                      onClick={() => setMissionTimeMin(sec / 60)}>{sec / 60}분</button>
+                  ))}
+                </div>
+                <label className="zr-personal-label">직접 입력 (분)
+                  <input className="zr-admin-input" type="number" inputMode="numeric" min={MIN_GOAL_TIME_MIN} max={MAX_GOAL_TIME_MIN} step="1"
+                    value={missionTimeMinText} onChange={e => setMissionTimeMinText(e.target.value)} />
+                </label>
+              </>}
+              {paceMode === 'distance' && <>
+                <div className="zr-pace-picker">
+                  {GOAL_DISTANCE_PRESETS.map(d => (
+                    <button key={d} aria-pressed={missionDistanceKm === d / 1000} className={missionDistanceKm === d / 1000 ? 'zr-pace-btn zr-pace-btn-on' : 'zr-pace-btn'}
+                      onClick={() => setMissionDistanceKm(d / 1000)}>{formatDistance(d)}</button>
+                  ))}
+                </div>
+                <label className="zr-personal-label">직접 입력 (km)
+                  <input className="zr-admin-input" type="number" inputMode="decimal" min={MIN_GOAL_DISTANCE_KM} max={MAX_GOAL_DISTANCE_KM} step="0.1"
+                    value={missionDistanceKmText} onChange={e => setMissionDistanceKmText(e.target.value)} />
+                </label>
+              </>}
+              <p className="zr-mode-description">
+                좀비 없이 위 목표 페이스를 지키는 게임이에요. ±15초 안이면 점수·에너지가 오르고, 15~30초 벗어나면 점수가 조금씩 깎이고,
+                30초 넘게 벗어나면 에너지가 빠르게 줄어요. 에너지가 0이면 게임오버.
+                {paceMode === 'endless' ? ' 에너지가 다 닳을 때까지 버티며 점수를 쌓으세요.' : ' 에너지를 남기고 목표를 채우면 성공, 점수로 순위를 매겨요.'}
+              </p>
             </>
           )}
 
@@ -706,7 +728,9 @@ function GameApp() {
 
   if (game.status === 'gameover') {
     const reasonText =
-      game.gameOverReason === 'caught'
+      game.gameOverReason === 'energy_out'
+        ? '에너지가 바닥났습니다'
+        : game.gameOverReason === 'caught'
         ? '좀비에게 붙잡혔습니다'
         : game.gameOverReason === 'outside_area'
           ? '생존 구역을 이탈했습니다'
@@ -722,7 +746,7 @@ function GameApp() {
           <div className="zr-result-grid">
             <div>
               <div className="zr-result-num">{formatTime(game.elapsedSec)}</div>
-              <div className="zr-result-label">생존 시간</div>
+              <div className="zr-result-label">{game.missionPaceKind > 0 ? '달린 시간' : '생존 시간'}</div>
             </div>
             <div>
               <div className="zr-result-num">{formatDistance(game.distance)}</div>
@@ -740,17 +764,18 @@ function GameApp() {
                 <div className="zr-result-label">목표 {formatTime(game.missionGoalSec)} 동안 달린 거리</div>
               </div>
             )}
-            {game.goalReachedPaceSec != null && (
+            {game.missionPaceKind > 0 && (
               <div>
-                <div className="zr-result-num">{formatTime(game.goalReachedPaceSec)}</div>
-                <div className="zr-result-label">목표 페이스 {formatTime(game.missionGoalPaceSec)} 유지 도달 시간</div>
+                <div className="zr-result-num">{Math.floor(game.paceScore)}점</div>
+                <div className="zr-result-label">페이스 유지 {paceMissionLabel(game.missionPaceKind, game.missionPaceGoal)}
+                  {game.missionPaceKind !== PACE_KIND.endless ? (game.paceCleared ? ' · 성공' : ' · 실패') : ''}</div>
               </div>
             )}
           </div>
           {game.roomId && <>
             <p role="status" className="zr-ranking-note">{saveState === 'saved' ? '내 최종 기록 저장 완료' : saveState === 'error' ? '기록 저장 재시도 중 · 이 화면을 유지해주세요.' : '내 최종 기록 저장 중…'}</p>
             {saveState !== 'saved' && <p className="zr-ranking-note">저장되기 전에 나가면 최종 기록이 누락될 수 있어요.</p>}
-            <Leaderboard players={teammates} playerId={game.roomPlayerId} error={rankingError} goalM={game.missionGoalM} goalSec={game.missionGoalSec} goalPaceSec={game.missionGoalPaceSec} />
+            <Leaderboard players={teammates} playerId={game.roomPlayerId} error={rankingError} goalM={game.missionGoalM} goalSec={game.missionGoalSec} paceKind={game.missionPaceKind} paceGoal={game.missionPaceGoal} />
           </>}
           {game.soloId && <>
             <p role="status" className="zr-ranking-note">{saveState === 'saved' ? '내 기록 저장 완료' : saveState === 'error' ? '기록 저장 재시도 중 · 이 화면을 유지해주세요.' : '내 기록 저장 중…'}</p>
@@ -790,6 +815,9 @@ function GameApp() {
   const gpsPaused = Boolean(geoError)
   const currentWave = Math.max(1, game.waveCount)
   const schoolPause = pauseStatus(game, Date.now())
+  const paceRun = game.missionPaceKind > 0
+  const paceProgress = game.missionPaceKind === PACE_KIND.time ? game.elapsedSec / game.missionPaceGoal
+    : game.missionPaceKind === PACE_KIND.distance ? game.distance / game.missionPaceGoal : 0
 
   return (
     <div className={`zr-screen zr-game-shell zr-threat-${threatBand}${outsideArea ? ' zr-outside-area' : ''}`}>
@@ -811,7 +839,7 @@ function GameApp() {
         <div className="zr-game-statusline">
           <span className={gpsPaused ? 'zr-live-state zr-live-paused' : 'zr-live-state'}><i /> {gpsPaused ? 'RUN PAUSED' : 'LIVE RUN'}</span>
           <span><GameIcon name="signal" size={14} /> {gpsPaused ? 'GPS PAUSED' : 'GPS LINK'}</span>
-          <span>{game.presetMap ? 'ROUTE RUN' : `WAVE ${String(currentWave).padStart(2, '0')}`}</span>
+          <span>{paceRun ? 'PACE RUN' : game.presetMap ? 'ROUTE RUN' : `WAVE ${String(currentWave).padStart(2, '0')}`}</span>
         </div>
         <div className="zr-hud-top" aria-label="러닝 현황">
         <div className="zr-hud-stat" aria-label={`경과 시간 ${formatTime(game.elapsedSec)}`}>
@@ -822,23 +850,29 @@ function GameApp() {
           <div className="zr-hud-value">{formatDistance(game.distance)}</div>
           <div className="zr-hud-label">{game.missionGoalM > 0 ? `거리 · 목표 ${formatDistance(game.missionGoalM)}` : '거리'}</div>
         </div>
-        <div className="zr-hud-stat zr-hud-threat" aria-label={`가장 가까운 좀비 ${nearestZombieDist == null ? '탐색 중' : formatDistance(nearestZombieDist)}`}>
-          <div className="zr-hud-value">{nearestZombieDist == null ? '—' : formatDistance(nearestZombieDist)}</div>
-          <div className="zr-hud-label">위협 거리</div>
-        </div>
+        {paceRun ? (
+          <div className="zr-hud-stat" aria-label={`페이스 유지 ${paceMissionLabel(game.missionPaceKind, game.missionPaceGoal)}`}>
+            <div className="zr-hud-value">{game.missionPaceKind === PACE_KIND.endless ? '∞' : `${Math.min(100, Math.floor(paceProgress * 100))}%`}</div>
+            <div className="zr-hud-label">{paceMissionLabel(game.missionPaceKind, game.missionPaceGoal)}</div>
+          </div>
+        ) : (
+          <div className="zr-hud-stat zr-hud-threat" aria-label={`가장 가까운 좀비 ${nearestZombieDist == null ? '탐색 중' : formatDistance(nearestZombieDist)}`}>
+            <div className="zr-hud-value">{nearestZombieDist == null ? '—' : formatDistance(nearestZombieDist)}</div>
+            <div className="zr-hud-label">위협 거리</div>
+          </div>
+        )}
       </div>
 
       <div className={behindPace ? 'zr-pace-bar zr-pace-bar-behind' : 'zr-pace-bar'}>
         <span className="zr-pace-side"><GameIcon name="run" size={17} /><span><small>내 페이스</small><strong>{livePaceMps == null ? '측정 중' : `${formatPace(livePaceMps)}/km`}</strong></span></span>
         <span className="zr-pace-vs">VS</span>
-        <span className="zr-pace-side zr-pace-enemy"><GameIcon name="zombie" size={17} /><span><small>좀비 기준</small><strong>{formatPace(game.targetPaceMps)}/km</strong></span></span>
+        <span className="zr-pace-side zr-pace-enemy"><GameIcon name={paceRun ? 'run' : 'zombie'} size={17} /><span><small>{paceRun ? '목표 페이스' : '좀비 기준'}</small><strong>{formatPace(game.targetPaceMps)}/km</strong></span></span>
       </div>
-      {game.missionGoalPaceSec > 0 && (
-        <p className="zr-pace-hint">목표 페이스 유지 {formatTime(game.paceHoldSec)} / {formatTime(game.missionGoalPaceSec)}</p>
-      )}
       </header>
 
       <div className="zr-hud-side">
+        {paceRun && <PaceGauge diffSec={game.paceDiffSec} zone={game.paceZone} energy={game.paceEnergy} score={game.paceScore} />}
+        {!paceRun && <>
         <div className="zr-enemy-counter" aria-label={`활성 좀비 ${game.zombies.length}마리`}>
           <GameIcon name="zombie" size={18} />
           <strong>{game.zombies.length}</strong>
@@ -860,10 +894,11 @@ function GameApp() {
           </div>
           <strong className="zr-vital-value">{game.health}<small>/{START_HEALTH}</small></strong>
         </div>
+        </>}
         {frozenActive && <div className="zr-freeze-counter"><GameIcon name="freeze" size={18} /><strong>{frozenRemaining}s</strong><small>FREEZE</small></div>}
         {game.roomId && (
           <button className="zr-badge" aria-label="내 순위와 생존 랭킹" aria-expanded={showTeammates} onClick={() => setShowTeammates((v) => !v)}>
-            <GameIcon name="users" size={18} /> <span>{rankPlayers(teammates, game.missionGoalM, game.missionGoalSec, game.missionGoalPaceSec).find(p => p.id === game.roomPlayerId)?.rank ?? '—'}위</span>
+            <GameIcon name="users" size={18} /> <span>{rankPlayers(teammates, game.missionGoalM, game.missionGoalSec, game.missionPaceKind).find(p => p.id === game.roomPlayerId)?.rank ?? '—'}위</span>
           </button>
         )}
         {game.soloId && <button className="zr-badge" aria-label="내 최고 기록과 전체 랭킹" aria-expanded={showTeammates} onClick={() => setShowTeammates(v => !v)}>{personalBoard?.me ? `${personalBoard.me.rank}위` : '기록'}</button>}
@@ -878,7 +913,7 @@ function GameApp() {
               <GameIcon name="close" size={18} />
             </button>
           </div>
-          <Leaderboard players={teammates} playerId={game.roomPlayerId} error={rankingError || (saveState === 'error' ? '내 기록 전송을 재시도하고 있어요.' : '')} goalM={game.missionGoalM} goalSec={game.missionGoalSec} goalPaceSec={game.missionGoalPaceSec} />
+          <Leaderboard players={teammates} playerId={game.roomPlayerId} error={rankingError || (saveState === 'error' ? '내 기록 전송을 재시도하고 있어요.' : '')} goalM={game.missionGoalM} goalSec={game.missionGoalSec} paceKind={game.missionPaceKind} paceGoal={game.missionPaceGoal} />
         </div>
       )}
       {game.soloId && showTeammates && <div className="zr-teammates-panel">
@@ -890,7 +925,7 @@ function GameApp() {
         {game.zombies.length > 0 && <button className="zr-banner zr-summon-button" disabled={gpsPaused || Date.now()-game.turnaroundAt<30000} onClick={() => {
           if (turnAround(game,Date.now())) { proximityRef.current.stop(); toast('반환! 반대편에서 좀비가 다시 쫓아옵니다.'); rerender() }
         }}>{Date.now()-game.turnaroundAt<30000 ? `반환점 돌기 · ${Math.ceil((30000-Date.now()+game.turnaroundAt)/1000)}초 후` : '반환점 돌기'}</button>}
-        {!game.presetMap && !game.roomId && game.waveCount === 0 && <button className="zr-banner zr-summon-button" disabled={gpsPaused || frozenActive} onClick={() => {
+        {!paceRun && !game.presetMap && !game.roomId && game.waveCount === 0 && <button className="zr-banner zr-summon-button" disabled={gpsPaused || frozenActive} onClick={() => {
           if (summonFirstWave(game, Date.now())) { toast('좀비가 등장했어요! 달리세요.'); rerender() }
         }}>좀비 지금 등장 · 자동 등장까지 {Math.max(0, Math.ceil(game.nextWaveSec - game.elapsedSec))}초</button>}
         {Date.now() < game.invulnerableUntil && <div role="status" className="zr-banner zr-banner-blue"><GameIcon name="shield" size={17} /> 보호 시간 · 거리를 벌리세요</div>}
@@ -918,11 +953,6 @@ function GameApp() {
             <GameIcon name="shield" size={17} /> 목표 시간 도달 · {formatDistance(game.goalReachedDistanceM)} 기록 확보 · 계속 달리는 중
           </div>
         )}
-        {game.missionGoalPaceSec > 0 && game.goalReachedPaceSec != null && (
-          <div role="status" className="zr-banner zr-banner-blue">
-            <GameIcon name="shield" size={17} /> 목표 페이스 유지 도달 · {formatTime(game.goalReachedPaceSec)} 기록 확보 · 계속 달리는 중
-          </div>
-        )}
         {outsideArea && <div role="alert" className="zr-banner zr-banner-red"><GameIcon name="warning" size={17} /> 생존 구역을 벗어났습니다</div>}
         {geoError && <div role="alert" className="zr-banner zr-banner-red"><GameIcon name="warning" size={17} /> {geoError}</div>}
       </div>
@@ -936,7 +966,7 @@ function GameApp() {
         </button>
         <div className="zr-run-state" role="status">
           <small>{runLabel}</small>
-          <strong>{gpsPaused ? 'GPS 신호 대기' : schoolPause.active ? '일시정지 중' : frozenActive ? '좀비 정지 · 경로 확보' : threatBand === 'critical' ? threatLabel : paceStatus}</strong>
+          <strong>{gpsPaused ? 'GPS 신호 대기' : schoolPause.active ? '일시정지 중' : frozenActive ? '좀비 정지 · 경로 확보' : threatBand === 'critical' ? threatLabel : paceRun ? (game.paceZone == null ? '페이스 측정 중' : game.paceZone === 'ok' ? '목표 페이스 유지 중' : game.paceDiffSec > 0 ? '조금 더 빠르게' : '조금 더 천천히') : paceStatus}</strong>
         </div>
         <button className="zr-exit-control" aria-label="러닝 종료" onClick={finishRun}>
           <GameIcon name="stop" size={18} />

@@ -94,3 +94,15 @@ test('finish waits for an in-flight alive update and retries failed terminal sav
   reporter.submit({status:'alive',elapsed:10})
   expect(send).toHaveBeenCalledTimes(3)
 })
+
+test('pace-energy room ranking puts cleared runners first, then higher score', () => {
+  const players = [
+    { id: 'a', pace_score: 900, pace_cleared: false, distance_m: 900 },
+    { id: 'b', pace_score: 500, pace_cleared: true, distance_m: 800 },
+    { id: 'c', pace_score: 700, pace_cleared: true, distance_m: 800 },
+    { id: 'd', pace_score: 700, pace_cleared: true, distance_m: 800 },
+  ]
+  expect(rankPlayers(players, 0, 0, 1).map(p => [p.id, p.rank])).toEqual([['c', 1], ['d', 1], ['b', 3], ['a', 4]])
+  // endless has no "cleared" — score alone decides
+  expect(rankPlayers(players, 0, 0, 3).map(p => p.id)).toEqual(['a', 'c', 'd', 'b'])
+})

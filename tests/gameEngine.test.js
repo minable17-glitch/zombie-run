@@ -2,7 +2,7 @@ import { test, expect } from 'vitest'
 import {
   advanceGame, applyStartSetup, makeInitialGame, updatePosition, summonFirstWave, turnAround,
   startPause, endPause, checkPauseAutoResume, pauseStatus, SCHOOL_PAUSE_BUDGET_SEC, SCHOOL_PAUSE_AUTO_RESUME_MS,
-  computeLivePaceMps,
+  computeLivePaceMps, paceDiffSec, paceZone, PACE_KIND, PACE_ENERGY_START, PACE_ENERGY_MAX, PACE_SCORE_MAX_PER_SEC,
 } from '../src/lib/gameEngine.js'
 import { haversineDistance } from '../src/lib/geo.js'
 import { insidePolygon } from '../src/lib/playArea.js'
@@ -303,48 +303,92 @@ test('computeLivePaceMps needs a minimum window and ignores a too-short one', ()
   expect(computeLivePaceMps(game)).toBe(2.5)
 })
 
-test('holding pace accumulates toward the pace-hold goal and ends the run when not set to continue', () => {
+function paceRun(kind, goal, metersIn10s) {
   const game = playing()
-  game.targetPaceMps = 2
-  game.missionGoalPaceSec = 10
-  game.paceSamples = [{ t: 0, d: 0 }, { t: 10000, d: 20 }] // 20m/10s = 2m/s, exactly at target pace
-  game.paceHoldSec = 8
-  let result = advanceGame(game, 1, 20000)
-  expect(result.endReason).toBeNull()
-  expect(game.paceHoldSec).toBe(9)
-  expect(game.goalReachedPaceSec).toBeNull()
-  result = advanceGame(game, 1, 21000)
-  expect(result.endReason).toBe('goal_reached')
-  expect(game.paceHoldSec).toBe(10)
-  expect(game.goalReachedPaceSec).toBe(game.elapsedSec)
-  expect(result.messages.some(m => m.includes('페이스 유지'))).toBe(true)
+  game.targetPaceMps = 2 // 500초/km
+  game.missionPaceKind = kind
+  game.missionPaceGoal = goal
+  game.paceSamples = [{ t: 0, d: 0 }, { t: 10000, d: metersIn10s }]
+  return game
+}
+
+test('pace diff is measured against the target pace and standing still is capped', () => {
+  expect(paceDiffSec(paceRun(PACE_KIND.endless, 0, 20))).toBeCloseTo(0)
+  expect(paceDiffSec(paceRun(PACE_KIND.endless, 0, 10))).toBeCloseTo(500) // 1m/s = 1000초/km
+  expect(paceDiffSec(paceRun(PACE_KIND.endless, 0, 0))).toBe(600)
+  expect(paceDiffSec({ ...paceRun(PACE_KIND.endless, 0, 20), paceSamples: [] })).toBeNull()
+  expect(paceZone(15)).toBe('ok')
+  expect(paceZone(-15)).toBe('ok')
+  expect(paceZone(-20)).toBe('warn')
+  expect(paceZone(30)).toBe('warn')
+  expect(paceZone(31)).toBe('danger')
 })
 
-test('falling behind pace does not accumulate hold time', () => {
-  const game = playing()
-  game.targetPaceMps = 2
-  game.missionGoalPaceSec = 10
-  game.paceSamples = [{ t: 0, d: 0 }, { t: 10000, d: 10 }] // 10m/10s = 1m/s, well under target
-  game.paceHoldSec = 5
-  const result = advanceGame(game, 1, 20000)
-  expect(result.endReason).toBeNull()
-  expect(game.paceHoldSec).toBe(5)
+test('holding pace raises score and energy, and the pace run spawns no zombies', () => {
+  const game = paceRun(PACE_KIND.endless, 0, 20)
+  game.elapsedSec = 200 // past the first-wave time
+  advanceGame(game, 1, 1000)
+  expect(game.paceZone).toBe('ok')
+  expect(game.paceScore).toBe(PACE_SCORE_MAX_PER_SEC)
+  expect(game.paceEnergy).toBe(PACE_ENERGY_START + 2)
+  expect(game.zombies).toHaveLength(0)
+  expect(game.pickups).toHaveLength(0)
+  expect(summonFirstWave(game, 1000)).toBe(false)
+  game.paceEnergy = PACE_ENERGY_MAX
+  advanceGame(game, 1, 2000)
+  expect(game.paceEnergy).toBe(PACE_ENERGY_MAX) // capped
 })
 
-test('reaching the pace-hold goal while set to continue keeps the run going and only records the time once', () => {
-  const game = playing()
-  game.targetPaceMps = 2
-  game.missionGoalPaceSec = 10
-  game.missionContinue = true
-  game.paceSamples = [{ t: 0, d: 0 }, { t: 10000, d: 20 }]
-  game.paceHoldSec = 9
-  let result = advanceGame(game, 1, 20000)
-  expect(result.endReason).toBeNull()
-  expect(game.paceHoldSec).toBe(10)
-  const firstReachedAt = game.goalReachedPaceSec
-  expect(firstReachedAt).toBe(game.elapsedSec)
-  result = advanceGame(game, 1, 21000)
-  expect(result.endReason).toBeNull()
-  expect(game.goalReachedPaceSec).toBe(firstReachedAt) // doesn't keep moving once already reached
-  expect(game.paceHoldSec).toBe(10) // stops accumulating once the goal is already reached
+test('slightly off pace costs score but not energy; far off drains energy to game over', () => {
+  const game = paceRun(PACE_KIND.endless, 0, 1000 / 520 * 10) // 520초/km, 20초 느림
+  game.paceScore = 10
+  advanceGame(game, 1, 1000)
+  expect(game.paceZone).toBe('warn')
+  expect(game.paceScore).toBe(8)
+  expect(game.paceEnergy).toBe(PACE_ENERGY_START)
+  game.paceSamples = [{ t: 0, d: 0 }, { t: 10000, d: 30 }] // much too fast
+  const r1 = advanceGame(game, 1, 2000)
+  expect(game.paceZone).toBe('danger')
+  expect(game.paceScore).toBe(3)
+  expect(game.paceEnergy).toBe(PACE_ENERGY_START - 3)
+  expect(r1.messages.some(m => m.includes('너무 빨라요'))).toBe(true)
+  advanceGame(game, 1, 3000)
+  expect(game.paceScore).toBe(0) // never negative
+  game.paceEnergy = 2
+  const r2 = advanceGame(game, 1, 4000)
+  expect(r2.endReason).toBe('energy_out')
+  expect(game.paceCleared).toBe(false)
+})
+
+test('nothing changes while the pace is still being measured', () => {
+  const game = paceRun(PACE_KIND.endless, 0, 20)
+  game.paceSamples = []
+  const r = advanceGame(game, 1, 1000)
+  expect(r.endReason).toBeNull()
+  expect(game.paceZone).toBeNull()
+  expect(game.paceScore).toBe(0)
+  expect(game.paceEnergy).toBe(PACE_ENERGY_START)
+})
+
+test('time and distance pace runs clear when the goal is reached with energy left', () => {
+  const timed = paceRun(PACE_KIND.time, 10, 20)
+  timed.elapsedSec = 9
+  expect(advanceGame(timed, 1, 1000).endReason).toBe('goal_reached')
+  expect(timed.paceCleared).toBe(true)
+  const dist = paceRun(PACE_KIND.distance, 1000, 20)
+  dist.distance = 999
+  expect(advanceGame(dist, 1, 1000).endReason).toBeNull()
+  dist.distance = 1000
+  expect(advanceGame(dist, 1, 2000).endReason).toBe('goal_reached')
+  expect(dist.paceCleared).toBe(true)
+  const endless = paceRun(PACE_KIND.endless, 0, 20)
+  endless.elapsedSec = 100000
+  expect(advanceGame(endless, 1, 1000).endReason).toBeNull()
+})
+
+test('a saved map in pace mode starts with no patrol zombies', () => {
+  const g = playing()
+  g.missionPaceKind = PACE_KIND.endless
+  applyStartSetup(g, g.playerPos, { paceMps: 2, forcedMap: { id: 'm', center: g.playerPos, radius: 1000, routes: [[{ lat: 37, lon: 127 }, { lat: 37.01, lon: 127 }]] } })
+  expect(g.zombies).toHaveLength(0)
 })

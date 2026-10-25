@@ -6,14 +6,14 @@ const safeIntOrNull = value => value == null ? null : safeInt(value)
 // everyone who hasn't reached it yet, by how far they've gotten.
 // goalSec>0 (시간 목표런): whoever covered the most distance by the goal time ranks
 // first, then everyone who hasn't reached it yet, by how far they've gotten.
-// goalPaceSec>0 (페이스 유지런): whoever reached the pace-hold goal fastest ranks
-// first, then everyone who hasn't reached it yet, by how far they've gotten.
-// At most one of goalM/goalSec/goalPaceSec is ever set — a run is one mission type at a time.
-export function rankPlayers(players = [], goalM = 0, goalSec = 0, goalPaceSec = 0) {
+// paceKind>0 (페이스 유지런): highest score first. In time/distance pace runs a
+// player who cleared the goal ranks above everyone who didn't (endless has no clear).
+// At most one mission is ever set — a run is one mission type at a time.
+export function rankPlayers(players = [], goalM = 0, goalSec = 0, paceKind = 0) {
   const norm = players.map(p => ({
     ...p, elapsed_sec: safeInt(p.elapsed_sec), distance_m: safeInt(Math.round(Number(p.distance_m))),
     goal_reached_sec: safeIntOrNull(p.goal_reached_sec), goal_reached_m: safeIntOrNull(p.goal_reached_m),
-    pace_reached_sec: safeIntOrNull(p.pace_reached_sec),
+    pace_score: safeInt(p.pace_score), pace_cleared: paceKind === 1 || paceKind === 2 ? p.pace_cleared === true : false,
   }))
   const sorted = goalM > 0
     ? norm.sort((a, b) => {
@@ -29,13 +29,9 @@ export function rankPlayers(players = [], goalM = 0, goalSec = 0, goalPaceSec = 
         return (aReached ? b.goal_reached_m - a.goal_reached_m : b.distance_m - a.distance_m) ||
           String(a.id).localeCompare(String(b.id))
       })
-    : goalPaceSec > 0
-    ? norm.sort((a, b) => {
-        const aReached = a.pace_reached_sec != null, bReached = b.pace_reached_sec != null
-        if (aReached !== bReached) return aReached ? -1 : 1
-        return (aReached ? a.pace_reached_sec - b.pace_reached_sec : b.distance_m - a.distance_m) ||
-          String(a.id).localeCompare(String(b.id))
-      })
+    : paceKind > 0
+    ? norm.sort((a, b) => (b.pace_cleared - a.pace_cleared) || (b.pace_score - a.pace_score) ||
+        (b.distance_m - a.distance_m) || String(a.id).localeCompare(String(b.id)))
     : norm.sort((a, b) => b.elapsed_sec - a.elapsed_sec || b.distance_m - a.distance_m || String(a.id).localeCompare(String(b.id)))
   let rank = 0
   return sorted.map((p, i) => {
@@ -44,8 +40,8 @@ export function rankPlayers(players = [], goalM = 0, goalSec = 0, goalPaceSec = 
       ? prev.goal_reached_sec === p.goal_reached_sec && (p.goal_reached_sec != null || prev.distance_m === p.distance_m)
       : goalSec > 0
       ? prev.goal_reached_m === p.goal_reached_m && (p.goal_reached_m != null || prev.distance_m === p.distance_m)
-      : goalPaceSec > 0
-      ? prev.pace_reached_sec === p.pace_reached_sec && (p.pace_reached_sec != null || prev.distance_m === p.distance_m)
+      : paceKind > 0
+      ? prev.pace_cleared === p.pace_cleared && prev.pace_score === p.pace_score && prev.distance_m === p.distance_m
       : prev.elapsed_sec === p.elapsed_sec && prev.distance_m === p.distance_m)
     if (!tie) rank = i + 1
     return { ...p, rank }

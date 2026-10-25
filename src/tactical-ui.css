@@ -1198,3 +1198,84 @@ button:active:not(:disabled) {
 .zr-area-point { width: 32px; height: 32px; border: 2px solid #45ddff; background: #0b2027; color: #fff; }
 .zr-area-drawing { touch-action: none; cursor: crosshair; }
 .zr-editor-map .leaflet-top { top: 96px; }
+
+/* ── 페이스 유지런 게이지 (좀비 대신 화면 오른쪽) ── */
+.zr-game-shell .zr-pace-gauge {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  width: 92px;
+  padding: 8px 7px;
+  border: 1px solid rgba(225, 237, 245, .38);
+  border-radius: 6px;
+  background: var(--zr-panel);
+  color: var(--zr-text);
+}
+.zr-pace-score { position: relative; display: flex; flex-direction: column; align-items: center; line-height: 1; }
+.zr-pace-score small { font: 700 9px var(--zr-data); letter-spacing: .12em; color: var(--zr-muted); }
+.zr-pace-score strong { font: 800 22px var(--zr-data); font-variant-numeric: tabular-nums; }
+.zr-pace-score em {
+  position: absolute; top: -6px; right: -18px;
+  font: 800 12px var(--zr-data); font-style: normal;
+  animation: zr-score-pop .7s ease-out forwards;
+}
+.zr-score-up { color: var(--zr-life); }
+.zr-score-down { color: var(--zr-danger); }
+@keyframes zr-score-pop { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(-14px); } }
+
+.zr-pace-gauge-body { display: flex; gap: 8px; height: 200px; }
+.zr-pace-track {
+  position: relative; width: 40px; height: 100%;
+  border-radius: 4px;
+  background: rgba(255, 90, 87, .28);
+  overflow: hidden;
+}
+.zr-pace-band { position: absolute; left: 0; right: 0; }
+.zr-pace-band-warn { background: rgba(255, 200, 87, .38); }
+.zr-pace-band-ok { background: rgba(118, 239, 101, .42); }
+.zr-pace-center { position: absolute; left: 0; right: 0; top: 50%; height: 2px; margin-top: -1px; background: var(--zr-text); }
+.zr-pace-end { position: absolute; left: 0; right: 0; text-align: center; font: 700 9px var(--zr-display); color: var(--zr-text); opacity: .75; }
+.zr-pace-end-top { top: 3px; }
+.zr-pace-end-bottom { bottom: 3px; }
+.zr-pace-marker {
+  position: absolute; left: -2px; right: -2px; height: 10px; margin-top: -5px;
+  border-radius: 5px;
+  background: var(--zr-player);
+  box-shadow: 0 0 10px var(--zr-player);
+  transition: top .9s cubic-bezier(.34, 1.4, .64, 1);
+}
+.zr-pace-zone-warn .zr-pace-marker { background: var(--zr-warning); box-shadow: 0 0 10px var(--zr-warning); }
+.zr-pace-zone-danger .zr-pace-marker { background: var(--zr-danger); box-shadow: 0 0 12px var(--zr-danger); animation: zr-marker-shake .4s ease-in-out infinite; }
+@keyframes zr-marker-shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-2px); } 75% { transform: translateX(2px); } }
+
+.zr-energy {
+  position: relative; width: 18px; height: 100%;
+  border: 1px solid rgba(225, 237, 245, .38);
+  border-radius: 4px;
+  background: rgba(255, 255, 255, .06);
+  overflow: hidden;
+}
+.zr-energy-fill {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  background: linear-gradient(to top, var(--zr-life), #b9ff8a);
+  transition: height .9s ease-out, background .3s;
+}
+.zr-pace-zone-danger .zr-energy-fill { background: linear-gradient(to top, var(--zr-danger), #ff9a6b); animation: zr-energy-blink .8s ease-in-out infinite; }
+@keyframes zr-energy-blink { 50% { opacity: .55; } }
+
+.zr-pace-gauge-foot { display: flex; flex-direction: column; align-items: center; line-height: 1.2; }
+.zr-pace-gauge-foot strong { font: 800 13px var(--zr-display); }
+.zr-pace-gauge-foot small { font: 600 10px var(--zr-data); color: var(--zr-muted); }
+.zr-pace-zone-ok .zr-pace-gauge-foot strong { color: var(--zr-life); }
+.zr-pace-zone-warn .zr-pace-gauge-foot strong { color: var(--zr-warning); }
+.zr-pace-zone-danger .zr-pace-gauge-foot strong { color: var(--zr-danger); }
+
+@media (prefers-reduced-motion: reduce) {
+  .zr-pace-marker, .zr-energy-fill { transition: none; }
+  .zr-pace-zone-danger .zr-pace-marker, .zr-pace-zone-danger .zr-energy-fill, .zr-pace-score em { animation: none; }
+}
+.zr-game-shell .zr-hud-side .zr-pace-gauge { grid-column: 1 / -1; }
+@media (max-height: 560px) {
+  .zr-pace-gauge-body { height: 120px; }
+}

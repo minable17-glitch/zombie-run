@@ -1,5 +1,5 @@
 import {
-  advanceAlongPath, bearingTo, clampToRadius, haversineDistance,
+  advanceAlongPath, bearingTo, clampToRadius, haversineDistance, formatDistance,
   moveToward, randomPointInDirection, randomPointNear, destinationPoint,
 } from './geo.js'
 import { PACE_PRESETS, DEFAULT_PACE_IDX } from './gameConfig.js'
@@ -35,6 +35,68 @@ export function computeLivePaceMps(game) {
   const dtSec = (last.t - first.t) / 1000
   if (dtSec < LIVE_PACE_MIN_WINDOW_SEC) return null
   return (last.d - first.d) / dtSec
+}
+
+// 페이스 유지런(좀비 없음): 목표 페이스와의 차이(초/km)로 구간을 나눠 매초 점수·에너지를 바꾼다.
+// 빨라도 늦어도 똑같이 "벗어난" 것으로 친다. 에너지가 0이 되면 게임오버.
+export const PACE_KIND = { time: 1, distance: 2, endless: 3 }
+export const PACE_ZONE_OK_SEC = 15
+export const PACE_ZONE_WARN_SEC = 30
+export const PACE_ENERGY_START = 70
+export const PACE_ENERGY_MAX = 100
+export const PACE_SCORE_MAX_PER_SEC = 10 // 서버가 점수 상한(경과 초 × 이 값)을 똑같이 건다
+const PACE_RATES = {
+  ok: { score: PACE_SCORE_MAX_PER_SEC, energy: 2 },
+  warn: { score: -2, energy: 0 },
+  danger: { score: -5, energy: -3 },
+}
+const PACE_DIFF_CAP_SEC = 600 // 서 있을 때처럼 거의 안 움직이면 차이를 이 값으로 둠
+
+// 지금 페이스가 목표보다 몇 초/km 느린지(+) 빠른지(-). 아직 못 재면 null
+export function paceDiffSec(game) {
+  const mps = computeLivePaceMps(game)
+  if (mps == null) return null
+  if (mps <= 1000 / (1000 / game.targetPaceMps + PACE_DIFF_CAP_SEC)) return PACE_DIFF_CAP_SEC
+  return 1000 / mps - 1000 / game.targetPaceMps
+}
+
+// "목표 10:00" · "목표 3.00km" · "무제한" — 화면·랭킹 문구 공용
+export function paceMissionLabel(kind, goal) {
+  return kind === PACE_KIND.time ? `목표 ${formatTime(goal)}` : kind === PACE_KIND.distance ? `목표 ${formatDistance(goal)}` : '무제한'
+}
+
+export function paceZone(diffSec) {
+  if (diffSec == null) return null
+  const off = Math.abs(diffSec)
+  return off <= PACE_ZONE_OK_SEC ? 'ok' : off <= PACE_ZONE_WARN_SEC ? 'warn' : 'danger'
+}
+
+// 매 틱마다 점수·에너지를 갱신하고, 끝나야 하면 endReason을 돌려줌
+function advancePaceMission(game, dt, emit) {
+  const diff = paceDiffSec(game)
+  game.paceDiffSec = diff
+  const zone = paceZone(diff)
+  if (zone) {
+    const rate = PACE_RATES[zone]
+    game.paceScore = Math.max(0, game.paceScore + rate.score * dt)
+    game.paceEnergy = Math.min(PACE_ENERGY_MAX, Math.max(0, game.paceEnergy + rate.energy * dt))
+    if (zone === 'danger' && game.paceZone !== 'danger') emit(diff > 0 ? '너무 느려요! 에너지가 줄고 있어요' : '너무 빨라요! 에너지가 줄고 있어요')
+  }
+  game.paceZone = zone
+  if (game.paceEnergy <= 0) {
+    game.paceCleared = false
+    emit('에너지가 바닥났어요!')
+    return 'energy_out'
+  }
+  const goal = game.missionPaceGoal
+  const reached = game.missionPaceKind === PACE_KIND.time ? game.elapsedSec >= goal
+    : game.missionPaceKind === PACE_KIND.distance ? game.distance >= goal : false
+  if (reached) {
+    game.paceCleared = true
+    emit('목표 달성! 페이스를 끝까지 지켰어요')
+    return 'goal_reached'
+  }
+  return null
 }
 
 // 제한구역 모드: 시작 위치를 중심으로 반경을 정해서 그 안에서만 좀비/아이템이 등장하고,
@@ -114,12 +176,16 @@ export function makeInitialGame() {
     roomNickname: null,
     missionGoalM: 0, // 거리 목표런의 목표 거리(미터). 0이면 목표 없는 일반 생존 러닝
     missionGoalSec: 0, // 시간 목표런의 목표 시간(초). missionGoalM과 동시에 쓰지 않음(미션은 하나만 선택)
-    missionGoalPaceSec: 0, // 페이스 유지런의 목표 누적 유지 시간(초). 다른 missionGoal*과 동시에 쓰지 않음
-    missionContinue: false, // 목표 도달 후에도 계속 달릴지(true) 바로 종료할지(false) — 목표가 있을 때만 의미 있음
+    missionPaceKind: 0, // 페이스 유지런(좀비 없음): 0 아님 · PACE_KIND.time/distance/endless. 다른 미션과 동시에 쓰지 않음
+    missionPaceGoal: 0, // 시간 모드면 초, 거리 모드면 미터, 무제한이면 0
+    missionContinue: false, // 목표 도달 후에도 계속 달릴지(true) 바로 종료할지(false) — 거리/시간 목표런에서만 의미 있음
     goalReachedSec: null, // 거리 목표에 도달한 시점의 elapsedSec. 아직 도달 전이면 null
     goalReachedDistanceM: null, // 시간 목표에 도달한 시점의 distance. 아직 도달 전이면 null
-    paceHoldSec: 0, // 지금까지 누적된 "목표 페이스 이상 유지" 시간(초)
-    goalReachedPaceSec: null, // 페이스 유지 목표에 도달한 시점의 elapsedSec. 아직 도달 전이면 null
+    paceEnergy: PACE_ENERGY_START,
+    paceScore: 0,
+    paceDiffSec: null, // 화면 게이지용: 목표보다 몇 초/km 느린지(+)/빠른지(-)
+    paceZone: null, // 'ok' | 'warn' | 'danger' | null(측정 중)
+    paceCleared: null, // 목표(시간/거리)를 에너지 남긴 채 채웠으면 true, 에너지가 바닥났으면 false
     schoolLinked: false, // 학교연동(매 1런) 러너의 생존 러닝일 때만 아래 멈춤 예산이 동작함
     pauseSegment: 0, // 지금 멈춤 예산을 계산한 1km 구간 (Math.floor(distance/1000))
     pauseBudgetSec: SCHOOL_PAUSE_BUDGET_SEC, // 이번 구간에서 남은 멈춤 예산(초)
@@ -224,6 +290,7 @@ export function applyStartSetup(game, startPos, { paceMps, playMode, radiusM, fo
     game.areaBoundary = null
     game.zombies = []
   }
+  if (game.missionPaceKind > 0) game.zombies = []
   return matched
 }
 
@@ -251,7 +318,7 @@ export function turnAround(game, now) {
 }
 
 export function summonFirstWave(game, now) {
-  if (game.status !== 'playing' || game.presetMap || game.roomId || game.waveCount !== 0 || !game.playerPos || now < game.frozenUntil) return false
+  if (game.status !== 'playing' || game.missionPaceKind > 0 || game.presetMap || game.roomId || game.waveCount !== 0 || !game.playerPos || now < game.frozenUntil) return false
   spawnWave(game, now, () => {})
   game.waveCount = 1
   game.nextWaveSec = game.elapsedSec + NEXT_WAVE_SEC
@@ -315,16 +382,9 @@ export function advanceGame(game, dt, now) {
       if (!game.missionContinue) return { messages, endReason: 'goal_reached' }
     }
 
-    if (game.missionGoalPaceSec > 0 && game.goalReachedPaceSec == null) {
-      const livePaceMps = computeLivePaceMps(game)
-      if (livePaceMps != null && livePaceMps >= game.targetPaceMps * PACE_HOLD_THRESHOLD) {
-        game.paceHoldSec += dt
-        if (game.paceHoldSec >= game.missionGoalPaceSec) {
-          game.goalReachedPaceSec = game.elapsedSec
-          emit(game.missionContinue ? '목표 페이스 유지 시간을 채웠어요! 계속 달리거나 지금 종료할 수 있어요.' : '목표 페이스 유지 시간을 채웠어요!')
-          if (!game.missionContinue) return { messages, endReason: 'goal_reached' }
-        }
-      }
+    if (game.missionPaceKind > 0) {
+      // 페이스 유지런엔 좀비·아이템이 없다 — 판정은 점수·에너지만
+      return { messages, endReason: advancePaceMission(game, dt, emit) }
     }
 
     if (game.playerPos && !frozen && game.elapsedSec >= game.nextWaveSec) {

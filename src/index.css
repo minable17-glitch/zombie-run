@@ -101,6 +101,10 @@ body {
   grid-template-columns: repeat(2, 1fr);
 }
 
+.zr-pace-picker-3col {
+  grid-template-columns: repeat(3, 1fr);
+}
+
 .zr-pace-hint {
   color: #9db3a6;
   font-size: 11px;

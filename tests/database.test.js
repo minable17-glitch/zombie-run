@@ -3,7 +3,7 @@ import { beforeAll, afterAll, test, expect } from 'vitest'
 import { PGlite } from '@electric-sql/pglite'
 import { readFileSync } from 'node:fs'
 
-const migration = ['20260909140000_zombie_run_security.sql', '20260910010000_room_expiration.sql', '20260911030000_legacy_profile_lookup.sql', '20260916010000_map_boundary.sql', '20260921010000_room_survival_rank.sql', '20260922010000_personal_survival.sql', '20260922020000_finished_rooms.sql', '20260923010000_solo_maps.sql', '20260923020000_six_digit_codes.sql', '20260923021000_code_attempt_guard.sql', '20260928010000_zombie_run_link.sql', '20260928020000_school_pause_state.sql', '20261014010000_self_chosen_signup_code.sql', '20261014020000_distance_goal_missions.sql', '20261016010000_time_goal_missions.sql', '20261019010000_pace_hold_missions.sql']
+const migration = ['20260909140000_zombie_run_security.sql', '20260910010000_room_expiration.sql', '20260911030000_legacy_profile_lookup.sql', '20260916010000_map_boundary.sql', '20260921010000_room_survival_rank.sql', '20260922010000_personal_survival.sql', '20260922020000_finished_rooms.sql', '20260923010000_solo_maps.sql', '20260923020000_six_digit_codes.sql', '20260923021000_code_attempt_guard.sql', '20260928010000_zombie_run_link.sql', '20260928020000_school_pause_state.sql', '20261014010000_self_chosen_signup_code.sql', '20261014020000_distance_goal_missions.sql', '20261016010000_time_goal_missions.sql', '20261019010000_pace_hold_missions.sql', '20261025010000_pace_energy_missions.sql']
   .map(name => readFileSync('supabase/migrations/' + name, 'utf8').replace(/^\uFEFF/, '').trim()).join('\n\n')
 const ids = {
   host: '00000000-0000-4000-8000-000000000001',
@@ -431,6 +431,65 @@ test('room pace-hold runs share the same goal from room config and track each pl
   await asUser(ids.host,"select zr_update_stat_v2($1,2200,6,'alive',220,210)",[room])
   snapshot=(await asUser(ids.host,'select zr_read_room($1) result',[room])).rows[0].result
   expect(snapshot.players.find(p=>p.id===made.player.id).pace_reached_sec).toBe(200)
+})
+
+test('pace-energy solo runs rank by score; time/distance need a cleared run, endless ranks every run', async () => {
+  const u = '00000000-0000-4000-8000-000000000014'
+  await db.query('insert into auth.users(id,is_anonymous) values($1,true)', [u])
+  await asUser(u,"select zr_runner_connect('Energy Runner','975310',true)")
+  const id = n => `40000000-0000-4000-8000-00000000000${n}`
+  // invalid settings: bad goal for the kind, endless with a goal, combined with another mission
+  await expect(asUser(u,"select zr_solo_start($1,'free',1,1,0,0,0,1,30)",[id(1)])).rejects.toThrow()
+  await expect(asUser(u,"select zr_solo_start($1,'free',1,1,0,0,0,3,600)",[id(1)])).rejects.toThrow()
+  await expect(asUser(u,"select zr_solo_start($1,'free',1,1,1000,0,0,2,1000)",[id(1)])).rejects.toThrow()
+  // time mode 600s: score is capped at elapsed*10, a cleared claim needs elapsed >= goal
+  await asUser(u,"select zr_solo_start($1,'free',1,1,0,0,0,1,600)",[id(1)])
+  await db.query("update zr_private.solo_runs set started_at=now()-interval '700 seconds' where id=$1",[id(1)])
+  const mid=(await asUser(u,"select zr_solo_update($1,100,300,'alive',null,99999) result",[id(1)])).rows[0].result
+  expect(mid.pace_score).toBe(1000)
+  const early=(await asUser(u,"select zr_solo_update($1,300,900,'caught',null,2500,true) result",[id(1)])).rows[0].result
+  expect(early).toMatchObject({pace_score:2500,pace_cleared:false,is_best:false}) // only 300s of 600 — claim refused
+  await asUser(u,"select zr_solo_start($1,'free',1,1,0,0,0,1,600)",[id(2)])
+  await db.query("update zr_private.solo_runs set started_at=now()-interval '700 seconds' where id=$1",[id(2)])
+  const ok=(await asUser(u,"select zr_solo_update($1,600,1800,'caught',null,5000,true) result",[id(2)])).rows[0].result
+  expect(ok).toMatchObject({pace_score:5000,pace_cleared:true,is_best:true,previous_sec:null})
+  let board=(await asUser(u,"select zr_solo_board('free',1,1,0,0,0,1,600) result")).rows[0].result
+  expect(board.total).toBe(1)
+  expect(board.me).toMatchObject({nickname:'Energy Runner',pace_score:5000,rank:1})
+  expect((await asUser(u,"select zr_solo_board('free',1,1,0,0,0,1,300) result")).rows[0].result.total).toBe(0) // other goal = other board
+  expect((await asUser(u,"select zr_solo_board('free',1,1) result")).rows[0].result.me).toBeNull() // not mixed into survival
+  // a lower cleared score is not a new best
+  await asUser(u,"select zr_solo_start($1,'free',1,1,0,0,0,1,600)",[id(3)])
+  await db.query("update zr_private.solo_runs set started_at=now()-interval '700 seconds' where id=$1",[id(3)])
+  expect((await asUser(u,"select zr_solo_update($1,600,1800,'caught',null,4000,true) result",[id(3)])).rows[0].result.is_best).toBe(false)
+  // distance mode: cleared only when the server-capped distance reaches the goal
+  await asUser(u,"select zr_solo_start($1,'free',1,1,0,0,0,2,1000)",[id(4)])
+  await db.query("update zr_private.solo_runs set started_at=now()-interval '700 seconds' where id=$1",[id(4)])
+  expect((await asUser(u,"select zr_solo_update($1,400,1200,'caught',null,3000,true) result",[id(4)])).rows[0].result.pace_cleared).toBe(true)
+  // endless: ranked even though it ended by running out of energy
+  await asUser(u,"select zr_solo_start($1,'free',1,1,0,0,0,3,0)",[id(5)])
+  await db.query("update zr_private.solo_runs set started_at=now()-interval '700 seconds' where id=$1",[id(5)])
+  const endless=(await asUser(u,"select zr_solo_update($1,500,1500,'caught',null,3200,false) result",[id(5)])).rows[0].result
+  expect(endless).toMatchObject({pace_score:3200,pace_cleared:null,is_best:true})
+  board=(await asUser(u,"select zr_solo_board('free',1,1,0,0,0,3,0) result")).rows[0].result
+  expect(board.me).toMatchObject({pace_score:3200,rank:1})
+  await asUser(u,'select zr_runner_disconnect()')
+})
+
+test('pace-energy room runs share the mode from config and keep score and clear per player', async () => {
+  await expect(asUser(ids.host,"select zr_create_room('Bad',$1)",[{playMode:'free',missionPaceKind:3,missionPaceGoal:100}])).rejects.toThrow()
+  await expect(asUser(ids.host,"select zr_create_room('Bad',$1)",[{playMode:'free',missionPaceKind:1,missionPaceGoal:600,missionGoalM:1000}])).rejects.toThrow()
+  const made=(await asUser(ids.host,"select zr_create_room('Energy Host',$1) result",[{playMode:'free',missionPaceKind:1,missionPaceGoal:300}])).rows[0].result
+  expect(made.room.config).toMatchObject({missionPaceKind:1,missionPaceGoal:300,missionGoalM:0,missionGoalSec:0,missionGoalPaceSec:0})
+  const room=made.room.id
+  await asUser(ids.host,'select zr_start_room($1)',[room])
+  await db.query("update game_rooms set started_at=now()-interval '400 seconds' where id=$1",[room])
+  await asUser(ids.host,"select zr_update_stat_v2($1,500,6,'alive',100,null,99999)",[room])
+  let me=(await asUser(ids.host,'select zr_read_room($1) result',[room])).rows[0].result.players.find(p=>p.id===made.player.id)
+  expect(me).toMatchObject({pace_score:1000,pace_cleared:null})
+  await asUser(ids.host,"select zr_update_stat_v2($1,900,6,'caught',300,null,2800,true)",[room])
+  me=(await asUser(ids.host,'select zr_read_room($1) result',[room])).rows[0].result.players.find(p=>p.id===made.player.id)
+  expect(me).toMatchObject({pace_score:2800,pace_cleared:true})
 })
 
 test('six-digit change preserves records, rejects invalid codes and invalidates old credentials', async () => {

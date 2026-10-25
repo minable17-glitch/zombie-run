@@ -26,8 +26,5 @@ export const DEFAULT_TIME_IDX = 1
 export const MIN_GOAL_TIME_MIN = 1
 export const MAX_GOAL_TIME_MIN = 120 // 서버 쪽 goal_sec 상한(7200초)과 맞춤
 
-// 페이스 유지런: 목표 페이스 이상으로 달린 누적 시간이 목표에 도달하면 성공 — 그 시간을 얼마나 빨리 채웠는지로 순위를 매김
-export const GOAL_PACE_HOLD_PRESETS = [120, 300, 600, 900] // 초 (2/5/10/15분)
-export const DEFAULT_PACE_HOLD_IDX = 1
-export const MIN_GOAL_PACE_HOLD_MIN = 1
-export const MAX_GOAL_PACE_HOLD_MIN = 60 // 서버 쪽 goal_pace_sec 상한(3600초)과 맞춤
+// 페이스 유지런(좀비 없음, 에너지 바 + 점수): 목표 시간 / 목표 거리 / 무제한. 시간·거리 목표값은 위의 프리셋·범위를 같이 쓴다
+// (서버 pace_goal: 시간 60~7200초, 거리 100~50000m)
