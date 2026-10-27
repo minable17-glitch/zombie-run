@@ -4,6 +4,10 @@
 
 ## 1. 마지막 작업과 다음 단계
 
+- 가장 최근 작업은 **로그인 없는 체험 모드**(`?try=1`, 실내 흔들기/실외 GPS, 30초·1분·2분 생존). 설명은 DEPLOYMENT.md 맨 위.
+  `src/TrialStart.jsx`, `src/lib/trial.js`, App.jsx 의 `startTrial`·`shakeRef`. 엔진엔 판마다 바꿀 수 있는 `maxHealth`·`waveGapSec`·`spawnRangeM`·
+  `respawnRangeM` 만 추가(기본값은 예전과 같음). 실기기 흔들기 감도는 미검증.
+
 - 가장 최근 작업은 **페이스 유지런 2판**(에너지 바 + 점수, 좀비 없음, 목표 시간/거리/무제한 모드)이다. 규칙·숫자·DB·배포 순서는
   DEPLOYMENT.md 맨 위. 엔진은 `gameEngine.js` `advancePaceMission`(미션 중이면 좀비·아이템 로직 전에 바로 return), 게이지는
   `src/PaceGauge.jsx`. 사용자가 고른 것: 종료 = 목표 채우기(또는 무제한), 순위 = 점수, 좀비 없음, 구간 ±15/±30초.

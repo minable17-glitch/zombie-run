@@ -154,6 +154,13 @@ export function makeInitialGame() {
     distance: 0,
     elapsedSec: 0,
     health: START_HEALTH,
+    maxHealth: START_HEALTH,
+    // 체험 모드처럼 짧은 판에서 좀비를 빨리·가까이 부르려고 바꿀 수 있게 둔 값 (평소엔 아래 기본값)
+    waveGapSec: NEXT_WAVE_SEC,
+    spawnRangeM: [70, 150],
+    respawnRangeM: [90, 160],
+    trial: false, // 로그인 없는 체험 판 — 기록을 어디에도 저장하지 않는다
+    trialIndoor: false, // 체험 실내 모드: GPS 대신 휴대폰 흔들기로 가상 위치를 움직인다
     frozenUntil: 0,
     zombies: [],
     pickups: [],
@@ -338,7 +345,7 @@ function spawnWave(game, now, emit) {
     const count = Math.min(room, WAVE_SIZE_MIN + Math.floor(Math.random() * (WAVE_SIZE_MAX - WAVE_SIZE_MIN + 1)))
     const spawned = []
     for (let i = 0; i < count; i++) {
-      let p = pickSpawnPoint(game, 70, 150, { behind: true })
+      let p = pickSpawnPoint(game, game.spawnRangeM[0], game.spawnRangeM[1], { behind: true })
       if (game.playMode === 'restricted' && game.areaCenter) p = clampToRadius(p, game.areaCenter, game.areaRadius)
       spawned.push({
         id: `z${now}_${i}_${Math.random().toString(36).slice(2, 7)}`,
@@ -414,7 +421,7 @@ export function advanceGame(game, dt, now) {
         spawnWave(game, now, emit)
         game.waveCount += 1
       }
-      game.nextWaveSec = game.elapsedSec + (game.presetMap ? PATROL_WAVE_SEC : NEXT_WAVE_SEC)
+      game.nextWaveSec = game.elapsedSec + (game.presetMap ? PATROL_WAVE_SEC : game.waveGapSec)
     }
 
     if (game.playerPos && Math.floor(game.elapsedSec / 70) > Math.floor((game.elapsedSec - dt) / 70) && !game.pickups.some((p) => p.type === 'hourglass')) {
@@ -452,7 +459,7 @@ export function advanceGame(game, dt, now) {
           if (z.patrolRoute) {
             survivors.push({ ...z, state: 'patrol', path: null, pathFetchedFor: null, lastRouteAt: 0 })
           } else {
-            let far = pickSpawnPoint(game, 90, 160, { behind: true })
+            let far = pickSpawnPoint(game, game.respawnRangeM[0], game.respawnRangeM[1], { behind: true })
             if (game.playMode === 'restricted') far = clampToRadius(far, game.areaCenter, game.areaRadius)
             survivors.push({ ...z, lat: far.lat, lon: far.lon, path: null, pathFetchedFor: null, lastRouteAt: 0 })
           }

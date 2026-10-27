@@ -1279,3 +1279,21 @@ button:active:not(:disabled) {
 @media (max-height: 560px) {
   .zr-pace-gauge-body { height: 120px; }
 }
+
+/* ── 로그인 없는 체험 ── */
+.zr-trial-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.zr-trial-mode {
+  display: flex; flex-direction: column; gap: 6px; align-items: flex-start; text-align: left;
+  padding: 14px 12px;
+  border: 1px solid var(--zr-line); border-radius: 8px;
+  background: rgba(255, 255, 255, .03); color: var(--zr-text); cursor: pointer;
+}
+.zr-trial-mode strong { font: 800 18px var(--zr-display); }
+.zr-trial-mode span { font-size: 12px; line-height: 1.4; color: var(--zr-muted); }
+.zr-trial-mode-on { border-color: var(--zr-player); background: rgba(70, 221, 255, .12); box-shadow: inset 0 -3px 0 var(--zr-player); }
+.zr-trial-tap {
+  pointer-events: auto;
+  min-height: 64px; font: 800 18px var(--zr-display);
+  touch-action: manipulation; user-select: none; -webkit-user-select: none;
+}
+.zr-trial-tap:active { transform: scale(.97); }

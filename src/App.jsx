@@ -7,6 +7,8 @@ import GameIcon from './GameIcon.jsx'
 import Leaderboard from './Leaderboard.jsx'
 import PersonalBoard from './PersonalBoard.jsx'
 import PaceGauge from './PaceGauge.jsx'
+import TrialStart from './TrialStart.jsx'
+import { isTrialEntry, createShakeRunner, requestMotionPermission, TRIAL_GAME, TRIAL_PACE_IDX } from './lib/trial.js'
 import { startSolo, updateSolo, soloBoard } from './lib/runnerApi.js'
 import { rankPlayers } from './lib/leaderboard.js'
 import { createProximityAlert } from './lib/proximityAlert.js'
@@ -64,7 +66,7 @@ function GameApp() {
   const [, setTick] = useState(0)
   const rerender = useCallback(() => setTick((n) => n + 1), [])
 
-  const [mode, setMode] = useBackableStep('game', 'zr-mode') // 'game' | 'admin' | 'room'
+  const [mode, setMode] = useBackableStep(isTrialEntry() ? 'trial' : 'game', 'zr-mode') // 'game' | 'admin' | 'room' | 'personal' | 'trial'
   const modeRef = useRef(mode)
   modeRef.current = mode
   const [zombieMaps, setZombieMaps] = useState([])
@@ -103,6 +105,8 @@ function GameApp() {
   const [personalBoard, setPersonalBoard] = useState(null)
   const [personalResult, setPersonalResult] = useState(null)
   const [vibrationOn, setVibrationOn] = useState(true)
+  const shakeRef = useRef(null) // 체험 실내 모드의 흔들기 달리기
+  const trialRef = useRef(null) // 마지막 체험 설정 — "다시 도전하기"용
   const vibrationEnabled = useRef(true)
   const proximityRef = useRef(null)
   if (!proximityRef.current) proximityRef.current = createProximityAlert(pattern => navigator.vibrate?.(pattern))
@@ -193,6 +197,7 @@ function GameApp() {
       watchIdRef.current = null
       game.gameOverReason = reason
       clearInterval(tickIntervalRef.current)
+      shakeRef.current?.stop()
       proximityRef.current.stop()
       if (game.roomId || game.soloId) {
         setSaveState('saving')
@@ -236,7 +241,7 @@ function GameApp() {
     proximityRef.current.update(alertDistance, now, vibrationEnabled.current && now >= game.frozenUntil)
 
     const needsRoute = findRouteCandidate(game, now)
-      if (needsRoute && ORS_API_KEY) {
+      if (needsRoute && ORS_API_KEY && !game.trial) {
         const runId = game.runId
         const turnaroundCount = game.turnaroundCount
         const targetId = needsRoute.id
@@ -313,7 +318,9 @@ function GameApp() {
 
   const startRun = useCallback((config, session) => {
     if (startingRef.current || game.status === 'playing') return Promise.resolve(false)
-    if (!navigator.geolocation && !isLocalTestMode()) {
+    const trial = session?.trial ?? null
+    const virtualStart = isLocalTestMode() || Boolean(trial?.indoor)
+    if (!navigator.geolocation && !virtualStart) {
       setGeoError('이 기기/브라우저는 위치 정보를 지원하지 않아요.')
       return Promise.resolve(false)
     }
@@ -362,6 +369,8 @@ function GameApp() {
         setPersonalBoard(null)
         setPersonalResult(null)
         if (watchIdRef.current != null) geoClearWatch(watchIdRef.current)
+        shakeRef.current?.stop()
+        shakeRef.current = null
         Object.assign(game, makeInitialGame(), {
           status: 'playing', playerPos: startPos, lastPos: startPos, lastFix: startPos,
           movementAnchor: startPos, lastTickAt: Date.now(),
@@ -373,6 +382,8 @@ function GameApp() {
           missionGoalM: config.missionGoalM || 0, missionGoalSec: config.missionGoalSec || 0,
           missionPaceKind: config.missionPaceKind || 0, missionPaceGoal: config.missionPaceGoal || 0,
           missionContinue: Boolean(config.missionContinue),
+          ...(trial ? { ...TRIAL_GAME, trial: true, trialIndoor: Boolean(trial.indoor), missionGoalM: 0, missionGoalSec: trial.seconds,
+            missionPaceKind: 0, missionPaceGoal: 0, missionContinue: false } : {}),
         })
         const matched = applyStartSetup(game, startPos, {
           paceMps: (PACE_PRESETS[config.paceIdx] ?? PACE_PRESETS[DEFAULT_PACE_IDX]).mps,
@@ -381,7 +392,15 @@ function GameApp() {
           forcedMap,
         })
         if (matched) toast('선택된 좀비 경로로 시작해요: ' + matched.name)
-        if (isLocalTestMode()) {
+        if (trial?.indoor) {
+          const shake = createShakeRunner(startPos)
+          shakeRef.current = shake
+          watchIdRef.current = null
+          tickIntervalRef.current = setInterval(() => {
+            handlePosition(shake.position(Date.now()))
+            tick()
+          }, 1000)
+        } else if (isLocalTestMode()) {
           let testStep = 0
           watchIdRef.current = null
           tickIntervalRef.current = setInterval(() => {
@@ -414,7 +433,7 @@ function GameApp() {
         rerender()
         resolve(true)
       }
-      if (isLocalTestMode()) {
+      if (virtualStart) {
         queueMicrotask(() => beginWithPosition(makeTestPosition()))
       } else {
         geoGetCurrentPosition(beginWithPosition,
@@ -457,17 +476,28 @@ function GameApp() {
 
   const finishRun = useCallback(() => endGame('manual'), [endGame])
 
-  const restart = requestLocationAndStart
+  const startTrial = useCallback(async opts => {
+    trialRef.current = opts
+    // 아이폰은 이 탭 안에서 허락을 받아야 흔들림을 읽는다 — 거절돼도 "탭해서 달리기"로 할 수 있으니 그대로 시작
+    if (opts.indoor) await requestMotionPermission()
+    const started = await startRun({ paceIdx: TRIAL_PACE_IDX, playMode: 'free' }, { trial: opts })
+    if (started) setMode('game')
+    return started
+  }, [startRun, setMode])
+
+  const restart = game.trial && trialRef.current ? () => startTrial(trialRef.current) : requestLocationAndStart
 
   const backToStart = useCallback(() => {
     clearInterval(teammatesPollRef.current)
     reporterRef.current?.dispose()
     const keepPos = game.playerPos
+    const wasTrial = game.trial
     Object.assign(game, makeInitialGame())
     game.playerPos = keepPos
     game.lastPos = keepPos
+    if (wasTrial) setMode('trial')
     rerender()
-  }, [game, rerender])
+  }, [game, rerender, setMode])
 
   if (passwordRecovery) {
     return <ResetPassword onDone={() => setPasswordRecovery(false)} />
@@ -529,6 +559,11 @@ function GameApp() {
         if (started) setMode('game')
         return started
       }} />
+  }
+
+  if (mode === 'trial') {
+    return <TrialStart starting={starting} error={geoError} onStart={startTrial} initial={trialRef.current}
+      onBack={isTrialEntry() ? null : () => setMode('game')} />
   }
 
   if (mode === 'room') {
@@ -711,6 +746,7 @@ function GameApp() {
             <GameIcon name="run" size={21} />
             <span>{starting ? '위치 확인 중…' : isLocalTestMode() ? '테스트 위치로 시작' : '생존 러닝 시작'}</span>
           </button>
+          <button className="zr-btn zr-btn-ghost" disabled={starting} onClick={() => { setGeoError(''); setMode('trial') }}>로그인 없이 1분 체험 · 실내 흔들기 가능</button>
           {supabase && <button className="zr-btn zr-btn-ghost" disabled={starting} onClick={() => { setGeoError(''); setMode('personal') }}>내 기록 · 전체 랭킹</button>}
           <p className="zr-mode-description">닉네임과 개인 코드로 나의 기록을 이어가세요. 방 없이 혼자 출발합니다.</p>
           <button className="zr-btn zr-btn-ghost" disabled={starting} onClick={() => { refreshZombieMaps(); setMode('room') }}>
@@ -739,7 +775,7 @@ function GameApp() {
         : game.gameOverReason === 'outside_area'
           ? '생존 구역을 이탈했습니다'
           : game.gameOverReason === 'goal_reached'
-            ? '목표를 달성했습니다!'
+            ? (game.trial ? `${formatTime(game.missionGoalSec)} 생존 성공!` : '목표를 달성했습니다!')
             : '러닝을 완료했습니다'
     return (
       <div className="zr-screen zr-start">
@@ -787,8 +823,9 @@ function GameApp() {
             <PersonalBoard board={personalBoard} config={game.soloConfig} result={personalResult} error={rankingError} />
           </>}
           {isLocalTestMode() && <p className="zr-ranking-note">가상 위치 테스트 · 개인 전체 랭킹에는 저장하지 않습니다.</p>}
+          {game.trial && <p className="zr-ranking-note">체험 판이라 기록은 저장되지 않아요. 진짜 좀비런은 실제로 달린 거리만큼 살아남는 게임이에요.</p>}
           <button className="zr-btn zr-btn-primary" onClick={restart} disabled={starting}>
-            {starting ? '위치 확인 중…' : game.roomId ? '혼자 다시 도전하기' : '다시 도전하기'}
+            {starting ? (game.trialIndoor ? '준비 중…' : '위치 확인 중…') : game.roomId ? '혼자 다시 도전하기' : '다시 도전하기'}
           </button>
           <button className="zr-btn zr-btn-ghost" onClick={backToStart} disabled={starting}>
             처음으로
@@ -842,8 +879,8 @@ function GameApp() {
       <header className="zr-game-header">
         <div className="zr-game-statusline">
           <span className={gpsPaused ? 'zr-live-state zr-live-paused' : 'zr-live-state'}><i /> {gpsPaused ? 'RUN PAUSED' : 'LIVE RUN'}</span>
-          <span><GameIcon name="signal" size={14} /> {gpsPaused ? 'GPS PAUSED' : 'GPS LINK'}</span>
-          <span>{paceRun ? 'PACE RUN' : game.presetMap ? 'ROUTE RUN' : `WAVE ${String(currentWave).padStart(2, '0')}`}</span>
+          <span><GameIcon name="signal" size={14} /> {game.trialIndoor ? 'SHAKE RUN' : gpsPaused ? 'GPS PAUSED' : 'GPS LINK'}</span>
+          <span>{game.trial ? `TRIAL · ${game.trialIndoor ? 'INDOOR' : 'OUTDOOR'}` : paceRun ? 'PACE RUN' : game.presetMap ? 'ROUTE RUN' : `WAVE ${String(currentWave).padStart(2, '0')}`}</span>
         </div>
         <div className="zr-hud-top" aria-label="러닝 현황">
         <div className="zr-hud-stat" aria-label={`경과 시간 ${formatTime(game.elapsedSec)}`}>
@@ -885,18 +922,18 @@ function GameApp() {
         <div
           className={game.health <= 2 ? 'zr-hearts zr-vital-low' : 'zr-hearts'}
           role="meter"
-          aria-label={`생명 ${game.health}/${START_HEALTH}`}
+          aria-label={`생명 ${game.health}/${game.maxHealth}`}
           aria-valuemin="0"
-          aria-valuemax={START_HEALTH}
+          aria-valuemax={game.maxHealth}
           aria-valuenow={game.health}
         >
           <span className="zr-vital-label">VITAL</span>
           <div className="zr-vital-segments" aria-hidden="true">
-          {Array.from({ length: START_HEALTH }).map((_, i) => (
+          {Array.from({ length: game.maxHealth }).map((_, i) => (
               <i key={i} className={i < game.health ? 'zr-heart zr-heart-on' : 'zr-heart'} />
           ))}
           </div>
-          <strong className="zr-vital-value">{game.health}<small>/{START_HEALTH}</small></strong>
+          <strong className="zr-vital-value">{game.health}<small>/{game.maxHealth}</small></strong>
         </div>
         </>}
         {frozenActive && <div className="zr-freeze-counter"><GameIcon name="freeze" size={18} /><strong>{frozenRemaining}s</strong><small>FREEZE</small></div>}
@@ -926,10 +963,16 @@ function GameApp() {
       </div>}
 
       <div className="zr-banner-stack">
-        {game.zombies.length > 0 && <button className="zr-banner zr-summon-button" disabled={gpsPaused || Date.now()-game.turnaroundAt<30000} onClick={() => {
+        {game.trialIndoor && <>
+          <div role="status" className="zr-banner zr-banner-blue">📳 휴대폰을 쥐고 제자리 뛰기! 흔들수록 앞으로 달려요 · {shakeRef.current?.steps ?? 0}걸음</div>
+          <button className="zr-banner zr-summon-button zr-trial-tap" onPointerDown={e => { e.preventDefault(); shakeRef.current?.step() }}>
+            {shakeRef.current?.sensed ? '👟 탭해도 한 걸음' : '👟 탭해서 달리기 (연타!)'}
+          </button>
+        </>}
+        {!game.trial && game.zombies.length > 0 && <button className="zr-banner zr-summon-button" disabled={gpsPaused || Date.now()-game.turnaroundAt<30000} onClick={() => {
           if (turnAround(game,Date.now())) { proximityRef.current.stop(); toast('반환! 반대편에서 좀비가 다시 쫓아옵니다.'); rerender() }
         }}>{Date.now()-game.turnaroundAt<30000 ? `반환점 돌기 · ${Math.ceil((30000-Date.now()+game.turnaroundAt)/1000)}초 후` : '반환점 돌기'}</button>}
-        {!paceRun && !game.presetMap && !game.roomId && game.waveCount === 0 && <button className="zr-banner zr-summon-button" disabled={gpsPaused || frozenActive} onClick={() => {
+        {!paceRun && !game.trial && !game.presetMap && !game.roomId && game.waveCount === 0 && <button className="zr-banner zr-summon-button" disabled={gpsPaused || frozenActive} onClick={() => {
           if (summonFirstWave(game, Date.now())) { toast('좀비가 등장했어요! 달리세요.'); rerender() }
         }}>좀비 지금 등장 · 자동 등장까지 {Math.max(0, Math.ceil(game.nextWaveSec - game.elapsedSec))}초</button>}
         {Date.now() < game.invulnerableUntil && <div role="status" className="zr-banner zr-banner-blue"><GameIcon name="shield" size={17} /> 보호 시간 · 거리를 벌리세요</div>}
