@@ -1297,3 +1297,4 @@ button:active:not(:disabled) {
   touch-action: manipulation; user-select: none; -webkit-user-select: none;
 }
 .zr-trial-tap:active { transform: scale(.97); }
+.zr-trial-name { width: 100%; box-sizing: border-box; margin-bottom: 10px; }

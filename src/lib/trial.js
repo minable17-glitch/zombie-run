@@ -18,6 +18,16 @@ export const TRIAL_GAME = {
   respawnRangeM: [40, 70],
 }
 
+export const TRIAL_NAME_MAX = 10
+const NAME_KEY = 'zr-trial-name'
+// 같은 기기로 다시 할 때 이름을 또 안 치게 — 저장이 막힌 브라우저면 그냥 빈칸
+export function loadTrialName() {
+  try { return globalThis.localStorage?.getItem(NAME_KEY) || '' } catch { return '' }
+}
+export function saveTrialName(name) {
+  try { globalThis.localStorage?.setItem(NAME_KEY, name) } catch { /* 저장 못 해도 체험은 된다 */ }
+}
+
 // 주소에 ?try=1 (또는 ?try) 를 붙이면 체험 화면으로 바로 연다 — QR 코드로 나눠 주기 좋게
 export function isTrialEntry(locationLike = globalThis.location) {
   if (!locationLike) return false

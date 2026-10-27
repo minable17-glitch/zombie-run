@@ -4,7 +4,7 @@
 
 ## 1. 마지막 작업과 다음 단계
 
-- 가장 최근 작업은 **로그인 없는 체험 모드**(`?try=1`, 실내 흔들기/실외 GPS, 30초·1분·2분 생존). 설명은 DEPLOYMENT.md 맨 위.
+- 가장 최근 작업은 **체험 판 이름 + 오늘 순위**(SQL `20261027010000_trial_ranking.sql`), 그 전은 **로그인 없는 체험 모드**(`?try=1`, 실내 흔들기/실외 GPS, 30초·1분·2분 생존). 설명은 DEPLOYMENT.md 맨 위.
   `src/TrialStart.jsx`, `src/lib/trial.js`, App.jsx 의 `startTrial`·`shakeRef`. 엔진엔 판마다 바꿀 수 있는 `maxHealth`·`waveGapSec`·`spawnRangeM`·
   `respawnRangeM` 만 추가(기본값은 예전과 같음). 실기기 흔들기 감도는 미검증.
 

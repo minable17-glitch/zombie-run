@@ -8,7 +8,9 @@ import Leaderboard from './Leaderboard.jsx'
 import PersonalBoard from './PersonalBoard.jsx'
 import PaceGauge from './PaceGauge.jsx'
 import TrialStart from './TrialStart.jsx'
-import { isTrialEntry, createShakeRunner, requestMotionPermission, TRIAL_GAME, TRIAL_PACE_IDX } from './lib/trial.js'
+import TrialBoard from './TrialBoard.jsx'
+import { isTrialEntry, createShakeRunner, requestMotionPermission, saveTrialName, TRIAL_GAME, TRIAL_PACE_IDX } from './lib/trial.js'
+import { trialStart, trialFinish, trialBoard } from './lib/trialApi.js'
 import { startSolo, updateSolo, soloBoard } from './lib/runnerApi.js'
 import { rankPlayers } from './lib/leaderboard.js'
 import { createProximityAlert } from './lib/proximityAlert.js'
@@ -107,6 +109,7 @@ function GameApp() {
   const [vibrationOn, setVibrationOn] = useState(true)
   const shakeRef = useRef(null) // 체험 실내 모드의 흔들기 달리기
   const trialRef = useRef(null) // 마지막 체험 설정 — "다시 도전하기"용
+  const [trialResult, setTrialResult] = useState(null) // 체험 판 순위 { state, me, board, error }
   const vibrationEnabled = useRef(true)
   const proximityRef = useRef(null)
   if (!proximityRef.current) proximityRef.current = createProximityAlert(pattern => navigator.vibrate?.(pattern))
@@ -203,6 +206,20 @@ function GameApp() {
         setSaveState('saving')
         reporterRef.current?.submit({ distance: game.distance, health: game.health,
           elapsed: game.elapsedSec, status: reason === 'manual' ? 'finished' : 'caught', ...paceReport(game) })
+      }
+      if (game.trial && game.trialRunId) {
+        const runId = game.runId
+        const live = () => game.runId === runId
+        setTrialResult({ state: 'saving' })
+        trialFinish(game.trialRunId, {
+          survived: reason === 'goal_reached' ? game.missionGoalSec : game.elapsedSec,
+          lives: game.health, distance: game.distance,
+        }).then(async me => {
+          if (!live()) return
+          setTrialResult({ state: 'saved', me })
+          const board = await trialBoard(game.trialIndoor, game.missionGoalSec)
+          if (live()) setTrialResult({ state: 'saved', me, board })
+        }).catch(e => { if (live()) setTrialResult(r => ({ ...r, state: 'error', error: e.message })) })
       }
       rerender()
     },
@@ -368,6 +385,7 @@ function GameApp() {
         setSaveState('')
         setPersonalBoard(null)
         setPersonalResult(null)
+        setTrialResult(null)
         if (watchIdRef.current != null) geoClearWatch(watchIdRef.current)
         shakeRef.current?.stop()
         shakeRef.current = null
@@ -382,7 +400,8 @@ function GameApp() {
           missionGoalM: config.missionGoalM || 0, missionGoalSec: config.missionGoalSec || 0,
           missionPaceKind: config.missionPaceKind || 0, missionPaceGoal: config.missionPaceGoal || 0,
           missionContinue: Boolean(config.missionContinue),
-          ...(trial ? { ...TRIAL_GAME, trial: true, trialIndoor: Boolean(trial.indoor), missionGoalM: 0, missionGoalSec: trial.seconds,
+          ...(trial ? { ...TRIAL_GAME, trial: true, trialIndoor: Boolean(trial.indoor), trialRunId: trial.runId ?? null, trialName: trial.name || '',
+            missionGoalM: 0, missionGoalSec: trial.seconds,
             missionPaceKind: 0, missionPaceGoal: 0, missionContinue: false } : {}),
         })
         const matched = applyStartSetup(game, startPos, {
@@ -480,10 +499,17 @@ function GameApp() {
     trialRef.current = opts
     // 아이폰은 이 탭 안에서 허락을 받아야 흔들림을 읽는다 — 거절돼도 "탭해서 달리기"로 할 수 있으니 그대로 시작
     if (opts.indoor) await requestMotionPermission()
-    const started = await startRun({ paceIdx: TRIAL_PACE_IDX, playMode: 'free' }, { trial: opts })
+    // 이름을 넣었으면 순위용 판을 서버에 연다 — 실패해도 체험은 그대로 (순위만 빠짐)
+    let runId = null
+    if (opts.name && supabase && !isLocalTestMode()) {
+      saveTrialName(opts.name)
+      try { runId = await trialStart(opts.name, opts.indoor, opts.seconds) }
+      catch (e) { toast('순위 연결 실패 · 이번 판은 순위 없이 해요 (' + e.message + ')') }
+    }
+    const started = await startRun({ paceIdx: TRIAL_PACE_IDX, playMode: 'free' }, { trial: { ...opts, runId } })
     if (started) setMode('game')
     return started
-  }, [startRun, setMode])
+  }, [startRun, setMode, toast])
 
   const restart = game.trial && trialRef.current ? () => startTrial(trialRef.current) : requestLocationAndStart
 
@@ -562,7 +588,7 @@ function GameApp() {
   }
 
   if (mode === 'trial') {
-    return <TrialStart starting={starting} error={geoError} onStart={startTrial} initial={trialRef.current}
+    return <TrialStart starting={starting} error={geoError} onStart={startTrial} initial={trialRef.current} ranking={Boolean(supabase)}
       onBack={isTrialEntry() ? null : () => setMode('game')} />
   }
 
@@ -823,7 +849,10 @@ function GameApp() {
             <PersonalBoard board={personalBoard} config={game.soloConfig} result={personalResult} error={rankingError} />
           </>}
           {isLocalTestMode() && <p className="zr-ranking-note">가상 위치 테스트 · 개인 전체 랭킹에는 저장하지 않습니다.</p>}
-          {game.trial && <p className="zr-ranking-note">체험 판이라 기록은 저장되지 않아요. 진짜 좀비런은 실제로 달린 거리만큼 살아남는 게임이에요.</p>}
+          {game.trial && game.trialRunId && <TrialBoard indoor={game.trialIndoor} seconds={game.missionGoalSec} board={trialResult?.board}
+            me={trialResult?.me} myName={trialResult?.me?.name ?? game.trialName} state={trialResult?.state} error={trialResult?.error} />}
+          {game.trial && !game.trialRunId && <p className="zr-ranking-note">이름 없이 한 체험 판이라 순위에 올라가지 않아요.</p>}
+          {game.trial && <p className="zr-ranking-note">진짜 좀비런은 실제로 달린 거리만큼 살아남는 게임이에요.</p>}
           <button className="zr-btn zr-btn-primary" onClick={restart} disabled={starting}>
             {starting ? (game.trialIndoor ? '준비 중…' : '위치 확인 중…') : game.roomId ? '혼자 다시 도전하기' : '다시 도전하기'}
           </button>

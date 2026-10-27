@@ -3,7 +3,7 @@ import { beforeAll, afterAll, test, expect } from 'vitest'
 import { PGlite } from '@electric-sql/pglite'
 import { readFileSync } from 'node:fs'
 
-const migration = ['20260909140000_zombie_run_security.sql', '20260910010000_room_expiration.sql', '20260911030000_legacy_profile_lookup.sql', '20260916010000_map_boundary.sql', '20260921010000_room_survival_rank.sql', '20260922010000_personal_survival.sql', '20260922020000_finished_rooms.sql', '20260923010000_solo_maps.sql', '20260923020000_six_digit_codes.sql', '20260923021000_code_attempt_guard.sql', '20260928010000_zombie_run_link.sql', '20260928020000_school_pause_state.sql', '20261014010000_self_chosen_signup_code.sql', '20261014020000_distance_goal_missions.sql', '20261016010000_time_goal_missions.sql', '20261019010000_pace_hold_missions.sql', '20261025010000_pace_energy_missions.sql']
+const migration = ['20260909140000_zombie_run_security.sql', '20260910010000_room_expiration.sql', '20260911030000_legacy_profile_lookup.sql', '20260916010000_map_boundary.sql', '20260921010000_room_survival_rank.sql', '20260922010000_personal_survival.sql', '20260922020000_finished_rooms.sql', '20260923010000_solo_maps.sql', '20260923020000_six_digit_codes.sql', '20260923021000_code_attempt_guard.sql', '20260928010000_zombie_run_link.sql', '20260928020000_school_pause_state.sql', '20261014010000_self_chosen_signup_code.sql', '20261014020000_distance_goal_missions.sql', '20261016010000_time_goal_missions.sql', '20261019010000_pace_hold_missions.sql', '20261025010000_pace_energy_missions.sql', '20261027010000_trial_ranking.sql']
   .map(name => readFileSync('supabase/migrations/' + name, 'utf8').replace(/^\uFEFF/, '').trim()).join('\n\n')
 const ids = {
   host: '00000000-0000-4000-8000-000000000001',
@@ -504,4 +504,29 @@ test('six-digit change preserves records, rejects invalid codes and invalidates 
  expect((await asUser(ids.member,'select zr_runner_connect($1,$2) result',['Solo A',oldCode])).rows[0].result.error).toBeTruthy()
  expect((await asUser(ids.member,"select zr_runner_connect('Solo A','012345') result")).rows[0].result.runner.nickname).toBe('Solo A')
  expect((await asUser(ids.host,"select zr_solo_board('free',1,0) result")).rows[0].result).toEqual(before)
+})
+
+test('trial ranking: anyone can play, the server caps the score and keeps the best per name today', async () => {
+  const asAnon = (sql, params = []) => db.transaction(async tx => { await tx.exec('set local role anon'); return tx.query(sql, params) })
+  const start = async (name, indoor = true, sec = 30) => (await asAnon('select zr_trial_start($1,$2,$3) id', [name, indoor, sec])).rows[0].id
+  const finish = async (id, s, l, d) => (await asAnon('select zr_trial_finish($1,$2,$3,$4) r', [id, s, l, d])).rows[0].r
+  await expect(start('   ')).rejects.toThrow(/이름/)
+  await expect(start('열한글자가넘는긴이름이야')).rejects.toThrow(/이름/)
+  await expect(start('민수', true, 45)).rejects.toThrow()
+  const a = await start('민수')
+  // 방금 시작했으니 30초를 다 버텼다고 우겨도 2초까지만 인정, 생명은 버티지 못했으니 0, 거리는 초당 6m까지
+  expect(await finish(a, 30, 3, 999)).toMatchObject({ survived: 2, lives: 0, distance: 12, score: 32, rank: 1 })
+  // 한 번 기록된 판은 다시 못 고친다
+  expect(await finish(a, 30, 3, 0)).toMatchObject({ score: 32 })
+  const b = await start('지영')
+  await db.query("update zr_private.trial_runs set started_at=now()-interval '40 seconds' where id=$1", [b])
+  expect(await finish(b, 30, 2, 70)).toMatchObject({ survived: 30, lives: 2, distance: 70, score: 570, rank: 1 })
+  const c = await start('민수')
+  await db.query("update zr_private.trial_runs set started_at=now()-interval '40 seconds' where id=$1", [c])
+  expect(await finish(c, 30, 1, 40)).toMatchObject({ score: 440, best: 440, rank: 2 })
+  await start('outdoor', false) // 끝내지 않은 판·다른 판은 순위에 없다
+  const board = (await asAnon('select zr_trial_board(true,30) b')).rows[0].b
+  expect(board.map(r => [r.rank, r.name, r.score])).toEqual([[1, '지영', 570], [2, '민수', 440]])
+  expect((await asAnon('select zr_trial_board(false,30) b')).rows[0].b).toEqual([])
+  await expect(asAnon('select * from zr_private.trial_runs')).rejects.toThrow()
 })
