@@ -9,7 +9,7 @@ import PersonalBoard from './PersonalBoard.jsx'
 import PaceGauge from './PaceGauge.jsx'
 import TrialStart from './TrialStart.jsx'
 import TrialBoard from './TrialBoard.jsx'
-import { isTrialEntry, createShakeRunner, requestMotionPermission, saveTrialName, TRIAL_GAME, TRIAL_PACE_IDX } from './lib/trial.js'
+import { isTrialEntry, createShakeRunner, saveTrialName, TRIAL_GAME, TRIAL_PACE_IDX } from './lib/trial.js'
 import { trialStart, trialFinish, trialBoard } from './lib/trialApi.js'
 import { startSolo, updateSolo, soloBoard } from './lib/runnerApi.js'
 import { rankPlayers } from './lib/leaderboard.js'
@@ -107,7 +107,7 @@ function GameApp() {
   const [personalBoard, setPersonalBoard] = useState(null)
   const [personalResult, setPersonalResult] = useState(null)
   const [vibrationOn, setVibrationOn] = useState(true)
-  const shakeRef = useRef(null) // 체험 실내 모드의 흔들기 달리기
+  const shakeRef = useRef(null) // 체험 실내 모드의 탭 달리기
   const trialRef = useRef(null) // 마지막 체험 설정 — "다시 도전하기"용
   const [trialResult, setTrialResult] = useState(null) // 체험 판 순위 { state, me, board, error }
   const vibrationEnabled = useRef(true)
@@ -243,10 +243,14 @@ function GameApp() {
       rerender()
       return
     }
+    const healthBefore = game.health
     const result = advanceGame(game, dt, now)
     result.messages.forEach(toast)
+    // 체험 판: 좀비에게 잡히면 길게 두 번 — 다가올 때의 짧은 진동과 구분되게
+    const hit = game.trial && game.health < healthBefore && vibrationEnabled.current
     if (result.endReason) {
       endGame(result.endReason)
+      if (hit) navigator.vibrate?.([500, 120, 500])
       return
     }
     const nearest = game.playerPos && game.zombies.length
@@ -256,6 +260,7 @@ function GameApp() {
       ? (game.paceDangerSec >= PACE_VIBRATE_AFTER_SEC ? (game.paceEnergy <= 30 ? 15 : 30) : Infinity)
       : nearest
     proximityRef.current.update(alertDistance, now, vibrationEnabled.current && now >= game.frozenUntil)
+    if (hit) navigator.vibrate?.([500, 120, 500])
 
     const needsRoute = findRouteCandidate(game, now)
       if (needsRoute && ORS_API_KEY && !game.trial) {
@@ -412,7 +417,7 @@ function GameApp() {
         })
         if (matched) toast('선택된 좀비 경로로 시작해요: ' + matched.name)
         if (trial?.indoor) {
-          const shake = createShakeRunner(startPos)
+          const shake = createShakeRunner(startPos, { motion: false }) // 흔들기는 실제 폰에서 잘 안 잡혀 탭으로만 달린다
           shakeRef.current = shake
           watchIdRef.current = null
           tickIntervalRef.current = setInterval(() => {
@@ -497,8 +502,6 @@ function GameApp() {
 
   const startTrial = useCallback(async opts => {
     trialRef.current = opts
-    // 아이폰은 이 탭 안에서 허락을 받아야 흔들림을 읽는다 — 거절돼도 "탭해서 달리기"로 할 수 있으니 그대로 시작
-    if (opts.indoor) await requestMotionPermission()
     // 이름을 넣었으면 순위용 판을 서버에 연다 — 실패해도 체험은 그대로 (순위만 빠짐)
     let runId = null
     if (opts.name && supabase && !isLocalTestMode()) {
@@ -772,7 +775,7 @@ function GameApp() {
             <GameIcon name="run" size={21} />
             <span>{starting ? '위치 확인 중…' : isLocalTestMode() ? '테스트 위치로 시작' : '생존 러닝 시작'}</span>
           </button>
-          <button className="zr-btn zr-btn-ghost" disabled={starting} onClick={() => { setGeoError(''); setMode('trial') }}>로그인 없이 1분 체험 · 실내 흔들기 가능</button>
+          <button className="zr-btn zr-btn-ghost" disabled={starting} onClick={() => { setGeoError(''); setMode('trial') }}>로그인 없이 1분 체험 · 실내에서도 가능</button>
           {supabase && <button className="zr-btn zr-btn-ghost" disabled={starting} onClick={() => { setGeoError(''); setMode('personal') }}>내 기록 · 전체 랭킹</button>}
           <p className="zr-mode-description">닉네임과 개인 코드로 나의 기록을 이어가세요. 방 없이 혼자 출발합니다.</p>
           <button className="zr-btn zr-btn-ghost" disabled={starting} onClick={() => { refreshZombieMaps(); setMode('room') }}>
@@ -908,7 +911,7 @@ function GameApp() {
       <header className="zr-game-header">
         <div className="zr-game-statusline">
           <span className={gpsPaused ? 'zr-live-state zr-live-paused' : 'zr-live-state'}><i /> {gpsPaused ? 'RUN PAUSED' : 'LIVE RUN'}</span>
-          <span><GameIcon name="signal" size={14} /> {game.trialIndoor ? 'SHAKE RUN' : gpsPaused ? 'GPS PAUSED' : 'GPS LINK'}</span>
+          <span><GameIcon name="signal" size={14} /> {game.trialIndoor ? 'TAP RUN' : gpsPaused ? 'GPS PAUSED' : 'GPS LINK'}</span>
           <span>{game.trial ? `TRIAL · ${game.trialIndoor ? 'INDOOR' : 'OUTDOOR'}` : paceRun ? 'PACE RUN' : game.presetMap ? 'ROUTE RUN' : `WAVE ${String(currentWave).padStart(2, '0')}`}</span>
         </div>
         <div className="zr-hud-top" aria-label="러닝 현황">
@@ -993,10 +996,7 @@ function GameApp() {
 
       <div className="zr-banner-stack">
         {game.trialIndoor && <>
-          <div role="status" className="zr-banner zr-banner-blue">📳 휴대폰을 쥐고 제자리 뛰기! 흔들수록 앞으로 달려요 · {shakeRef.current?.steps ?? 0}걸음</div>
-          <button className="zr-banner zr-summon-button zr-trial-tap" onPointerDown={e => { e.preventDefault(); shakeRef.current?.step() }}>
-            {shakeRef.current?.sensed ? '👟 탭해도 한 걸음' : '👟 탭해서 달리기 (연타!)'}
-          </button>
+          <div role="status" className="zr-banner zr-banner-blue">👇 아래 큰 버튼을 빠르게 연타! 한 번 = 1m · {shakeRef.current?.steps ?? 0}걸음</div>
         </>}
         {!game.trial && game.zombies.length > 0 && <button className="zr-banner zr-summon-button" disabled={gpsPaused || Date.now()-game.turnaroundAt<30000} onClick={() => {
           if (turnAround(game,Date.now())) { proximityRef.current.stop(); toast('반환! 반대편에서 좀비가 다시 쫓아옵니다.'); rerender() }
@@ -1034,6 +1034,11 @@ function GameApp() {
       </div>
       {toastMsg && <div className="zr-toast" role="status" aria-live="polite">{toastMsg}</div>}
 
+      {game.trialIndoor && <button className={`zr-trial-tap${nearestZombieDist != null && nearestZombieDist <= 30 ? ' zr-trial-tap-danger' : ''}`}
+        aria-label="탭해서 달리기" onPointerDown={e => { e.preventDefault(); shakeRef.current?.step(); rerender() }}>
+        <strong>👟 탭! 탭! 탭!</strong>
+        <span>{nearestZombieDist != null && nearestZombieDist <= 30 ? `⚠️ 좀비 ${formatDistance(nearestZombieDist)} — 더 빨리!` : '빠르게 연타할수록 앞으로 달려요'}</span>
+      </button>}
       <RunDisplay elapsed={game.elapsedSec} distance={game.distance} nearest={nearestZombieDist} paused={gpsPaused} />
       <div className="zr-hud-bottom">
         <button className="zr-map-control" aria-label="내 위치 자동 추적" aria-pressed={follow} onClick={() => setFollow((f) => !f)}>

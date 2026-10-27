@@ -80,3 +80,24 @@ test('surviving the trial time ends in success and "처음으로" returns to the
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: '처음으로' })) })
   expect(screen.getByRole('heading', { name: '좀비런 30초 체험' })).toBeTruthy()
 })
+
+test('indoor trial runs by tapping only, vibrates as zombies close in and hard when caught', async () => {
+  const vibrate = vi.fn(() => true)
+  Object.defineProperty(navigator, 'vibrate', { configurable: true, value: vibrate })
+  window.history.replaceState({}, '', '/?try=1')
+  await act(async () => { render(<App />) })
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: /체험 시작/ })) })
+  // 흔들어도 움직이지 않는다
+  for (let i = 0; i < 10; i++) {
+    window.dispatchEvent(Object.assign(new Event('devicemotion'), { acceleration: { x: 8, y: 0, z: 0 } }))
+    window.dispatchEvent(Object.assign(new Event('devicemotion'), { acceleration: { x: 0, y: 0, z: 0 } }))
+  }
+  expect(screen.getByText(/· 0걸음/)).toBeTruthy()
+  for (let s = 0; s < 40 && !vibrate.mock.calls.some(c => String(c[0]) === '500,120,500'); s++) {
+    await act(async () => { vi.advanceTimersByTime(1000) })
+  }
+  const patterns = vibrate.mock.calls.map(c => String(c[0]))
+  expect(patterns.some(p => p !== '0' && p !== '500,120,500')).toBe(true) // 접근 진동
+  expect(patterns).toContain('500,120,500') // 잡힘 진동
+  delete navigator.vibrate
+})

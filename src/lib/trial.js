@@ -73,8 +73,8 @@ export async function requestMotionPermission() {
   }
 }
 
-// 흔들기로 움직이는 가상 위치. step()은 흔들림이 안 잡히는 기기에서 화면 탭으로도 부른다.
-export function createShakeRunner(start, { stride = TRIAL_STRIDE_M, onStep } = {}) {
+// 탭(또는 흔들기)으로 움직이는 가상 위치. 체험 화면은 탭만 쓴다(motion: false) — 흔들기는 실제 폰에서 잘 안 잡혔다.
+export function createShakeRunner(start, { stride = TRIAL_STRIDE_M, onStep, motion = true } = {}) {
   let meters = 0
   let steps = 0
   let sensed = false
@@ -89,7 +89,7 @@ export function createShakeRunner(start, { stride = TRIAL_STRIDE_M, onStep } = {
     if (Number.isFinite(m)) sensed = true
     if (detect(m, event.timeStamp ?? Date.now())) step()
   }
-  globalThis.addEventListener?.('devicemotion', onMotion)
+  if (motion) globalThis.addEventListener?.('devicemotion', onMotion)
   return {
     step,
     get steps() { return steps },

@@ -6,7 +6,7 @@ import { trialBoard } from './lib/trialApi.js'
 
 const durationLabel = sec => (sec < 60 ? `${sec}초` : `${sec / 60}분`)
 
-// 로그인 없이 바로 해 보는 짧은 생존 판 — 실내(흔들기)/실외(GPS)와 시간만 고른다
+// 로그인 없이 바로 해 보는 짧은 생존 판 — 실내(탭)/실외(GPS)와 시간만 고른다
 // ranking 이 켜져 있으면 이름을 받아 오늘 순위에 올린다 (이름을 비우면 순위 없이 체험만)
 export default function TrialStart({ onStart, onBack, starting, error, initial, ranking = false }) {
   const [indoor, setIndoor] = useState(initial?.indoor ?? true)
@@ -30,8 +30,8 @@ export default function TrialStart({ onStart, onBack, starting, error, initial, 
         <p className="zr-pace-label">어디서 해 볼까요?</p>
         <div className="zr-trial-modes">
           <button className={indoor ? 'zr-trial-mode zr-trial-mode-on' : 'zr-trial-mode'} aria-pressed={indoor} onClick={() => setIndoor(true)}>
-            <strong>📳 실내</strong>
-            <span>휴대폰을 손에 쥐고 제자리 뛰기 — 흔들수록 앞으로 달려요</span>
+            <strong>👆 실내</strong>
+            <span>화면의 큰 버튼을 빠르게 연타 — 탭할수록 앞으로 달려요</span>
           </button>
           <button className={!indoor ? 'zr-trial-mode zr-trial-mode-on' : 'zr-trial-mode'} aria-pressed={!indoor} onClick={() => setIndoor(false)}>
             <strong>🏃 실외</strong>
@@ -65,7 +65,7 @@ export default function TrialStart({ onStart, onBack, starting, error, initial, 
           state={board.loading ? 'saving' : ''} error={board.error} />}
         {onBack && <button className="zr-btn zr-btn-ghost" disabled={starting} onClick={onBack}>진짜 좀비런 화면으로</button>}
         {ranking && !name.trim() && <p className="zr-location-note">이름을 비우면 순위 없이 체험만 해요.</p>}
-        <p className="zr-location-note">{indoor ? '흔들림 감지가 안 되는 기기에서는 화면의 "탭해서 달리기" 버튼을 연타해도 돼요.' : '위치 권한이 필요해요 · 야외에서 시작해주세요.'}</p>
+        <p className="zr-location-note">{indoor ? '좀비가 가까이 오면 진동이 울려요 (아이폰은 진동 대신 버튼이 빨갛게 깜빡여요).' : '위치 권한이 필요해요 · 야외에서 시작해주세요.'}</p>
       </div>
     </div>
   )
