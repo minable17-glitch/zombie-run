@@ -9,7 +9,7 @@ import PersonalBoard from './PersonalBoard.jsx'
 import PaceGauge from './PaceGauge.jsx'
 import TrialStart from './TrialStart.jsx'
 import TrialBoard from './TrialBoard.jsx'
-import { isTrialEntry, createShakeRunner, requestMotionPermission, saveTrialName, loadIndoorRoute, TRIAL_GAME, TRIAL_PACE_IDX } from './lib/trial.js'
+import { isTrialEntry, createShakeRunner, TRIAL_TAP_STRIDE_M, TRIAL_SWING_STRIDE_M, requestMotionPermission, saveTrialName, loadIndoorRoute, TRIAL_GAME, TRIAL_PACE_IDX } from './lib/trial.js'
 import { trialStart, trialFinish, trialBoard } from './lib/trialApi.js'
 import { startSolo, updateSolo, soloBoard } from './lib/runnerApi.js'
 import { rankPlayers } from './lib/leaderboard.js'
@@ -417,7 +417,8 @@ function GameApp() {
         })
         if (matched) toast('선택된 좀비 경로로 시작해요: ' + matched.name)
         if (trial?.indoor) {
-          const shake = createShakeRunner(startPos, { motion: Boolean(trial.swing), route: trial.route }) // 팔 흔들기 모드가 아니면 탭으로만
+          const shake = createShakeRunner(startPos, { motion: Boolean(trial.swing), route: trial.route,
+            stride: trial.swing ? TRIAL_SWING_STRIDE_M : TRIAL_TAP_STRIDE_M }) // 팔 흔들기 모드가 아니면 탭으로만
           shakeRef.current = shake
           watchIdRef.current = null
           tickIntervalRef.current = setInterval(() => {
@@ -1004,9 +1005,9 @@ function GameApp() {
       <div className="zr-banner-stack">
         {game.trialIndoor && <>
           <div role="status" className="zr-banner zr-banner-blue">{game.trialSwing
-            ? `💪 휴대폰을 쥐고 달리듯 팔을 앞뒤로! 한 번 = 1m · ${shakeRef.current?.steps ?? 0}걸음`
+            ? `💪 휴대폰을 쥐고 달리듯 팔을 앞뒤로! 한 번 = ${TRIAL_SWING_STRIDE_M}m · ${shakeRef.current?.steps ?? 0}걸음`
               + (shakeRef.current?.reading ? ` · 센서 회전 ${Math.round(shakeRef.current.reading.rot)} · 가속 ${shakeRef.current.reading.acc.toFixed(1)} · ${shakeRef.current.reading.rate}/초` : '')
-            : `👇 아래 큰 버튼을 빠르게 연타! 한 번 = 1m · ${shakeRef.current?.steps ?? 0}걸음`}</div>
+            : `👇 아래 큰 버튼을 빠르게 연타! 한 번 = ${TRIAL_TAP_STRIDE_M}m · ${shakeRef.current?.steps ?? 0}걸음`}</div>
           {game.trialSwing && game.elapsedSec >= 4 && !shakeRef.current?.sensed && <div role="alert" className="zr-banner zr-banner-red">
             동작 센서 신호가 없어요 · 아래 버튼을 탭해서 달려 주세요</div>}
         </>}

@@ -338,11 +338,11 @@ export function summonFirstWave(game, now) {
   return true
 }
 
-// 체험 판 긴장감: 짧은 판이라 좀비를 따돌리면 그냥 끝나 버린다. 멀어질수록 좀비가 따라붙고(20m부터, 60m면 1.9배)
+// 체험 판 긴장감: 짧은 판이라 좀비를 따돌리면 그냥 끝나 버린다. 멀어질수록 좀비가 따라붙고(15m부터, 45m면 2.2배)
 // 시간이 갈수록 조금씩 빨라진다(끝날 때 1.2배) — 잘 달리면 좀비가 30m쯤 뒤에서 계속 쫓아오는 느낌이 된다.
-export const TRIAL_CATCHUP_START_M = 20
-export const TRIAL_CATCHUP_FULL_M = 60
-export const TRIAL_CATCHUP_MAX = 0.9
+export const TRIAL_CATCHUP_START_M = 15
+export const TRIAL_CATCHUP_FULL_M = 45
+export const TRIAL_CATCHUP_MAX = 1.2
 export const TRIAL_RAMP_MAX = 0.2
 export function trialSpeedFactor(game, distanceM) {
   if (!game.trial) return 1

@@ -48,11 +48,11 @@ export default function TrialStart({ onStart, onBack, starting, error, initial, 
           <div className="zr-trial-modes">
             <button className={!swing ? 'zr-trial-mode zr-trial-mode-on' : 'zr-trial-mode'} aria-pressed={!swing} onClick={() => setSwing(false)}>
               <strong>👟 탭</strong>
-              <span>화면의 큰 버튼을 빠르게 연타 — 한 번 = 1m</span>
+              <span>화면의 큰 버튼을 빠르게 연타 — 한 번 = 50cm</span>
             </button>
             <button className={swing ? 'zr-trial-mode zr-trial-mode-on' : 'zr-trial-mode'} aria-pressed={swing} onClick={() => setSwing(true)}>
               <strong>💪 팔 흔들기</strong>
-              <span>휴대폰을 쥐고 달리듯 팔을 앞뒤로 — 한 번 흔들 때 1m</span>
+              <span>휴대폰을 쥐고 달리듯 팔을 앞뒤로 — 한 번 흔들 때 80cm</span>
             </button>
           </div>
         </>}

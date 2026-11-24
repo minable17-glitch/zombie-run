@@ -58,10 +58,10 @@ test('indoor trial starts without GPS, summons zombies fast, and tapping moves t
   expect(screen.getByLabelText(/경과 시간/)).toBeTruthy()
   const tap = screen.getByRole('button', { name: /탭해서 달리기/ })
   for (let s = 0; s < 6; s++) {
-    for (let i = 0; i < 3; i++) fireEvent.pointerDown(tap)
+    for (let i = 0; i < 6; i++) fireEvent.pointerDown(tap)
     await act(async () => { vi.advanceTimersByTime(1000) })
   }
-  expect(screen.getByText(/18걸음/)).toBeTruthy()
+  expect(screen.getByText(/36걸음/)).toBeTruthy()
   expect(Number(screen.getByTestId('game-map').textContent)).toBeGreaterThan(0) // first wave at ~3s
   expect(screen.getByLabelText(/달린 거리/).getAttribute('aria-label')).not.toBe('달린 거리 0m')
 })
@@ -73,7 +73,7 @@ test('surviving the trial time ends in success and "처음으로" returns to the
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: /체험 시작/ })) })
   const tap = screen.getByRole('button', { name: /탭해서 달리기/ })
   for (let s = 0; s < 32; s++) {
-    for (let i = 0; i < 4; i++) fireEvent.pointerDown(tap) // 4m/s — outruns the 7'00" zombie
+    for (let i = 0; i < 8; i++) fireEvent.pointerDown(tap) // 8 taps × 0.5m = 4m/s — outruns the 7'00" zombie
     await act(async () => { vi.advanceTimersByTime(1000) })
   }
   expect(screen.getByRole('heading', { name: '0:30 생존 성공!' })).toBeTruthy()
@@ -200,8 +200,8 @@ test('trial zombies close in when left far behind and speed up as time runs out'
   const { trialSpeedFactor } = await import('../src/lib/gameEngine.js')
   const game = { trial: true, elapsedSec: 0, missionGoalSec: 60 }
   expect(trialSpeedFactor(game, 15)).toBe(1)
-  expect(trialSpeedFactor(game, 40)).toBeCloseTo(1.45)
-  expect(trialSpeedFactor(game, 200)).toBeCloseTo(1.9)
+  expect(trialSpeedFactor(game, 30)).toBeCloseTo(1.6)
+  expect(trialSpeedFactor(game, 200)).toBeCloseTo(2.2)
   expect(trialSpeedFactor({ ...game, elapsedSec: 60 }, 15)).toBeCloseTo(1.2)
   expect(trialSpeedFactor({ trial: false }, 200)).toBe(1)
 })

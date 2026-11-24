@@ -6,7 +6,10 @@ import { fetchWalkingPath } from './routing.js'
 export const TRIAL_DURATIONS_SEC = [30, 60, 120]
 export const DEFAULT_TRIAL_SEC = 60
 export const TRIAL_PACE_IDX = 3 // 7'00"/km — 처음 해 보는 사람도 따돌릴 수 있게 가장 느린 좀비
-export const TRIAL_STRIDE_M = 1 // 흔들기 한 번 = 이만큼 앞으로 (초당 3번쯤 흔들면 좀비보다 조금 빠름)
+export const TRIAL_STRIDE_M = 1
+// 한 번에 가는 거리 — 1m 는 너무 쉬웠다. 탭은 초당 6~8번도 쉽게 되니 0.5m, 팔 흔들기는 초당 3번 안팎이라 0.8m
+export const TRIAL_TAP_STRIDE_M = 0.5
+export const TRIAL_SWING_STRIDE_M = 0.8
 const TRIAL_HEADING_DEG = 0
 // 실내 체험은 서울광장 앞에서 세종대로를 따라 광화문 쪽으로 달린다 — 가상 위치가 건물을 뚫고 가지 않게 실제 길 위로.
 // 시작할 때 도보 경로(ORS)를 한 번 받아 쓰고, 못 받으면 세종대로를 대충 따라가는 이 점들로 대신한다.

@@ -45,7 +45,7 @@ test('a named trial is entered into today\'s ranking and the result shows the bo
   expect(localStorage.getItem('zr-trial-name')).toBe('민수')
   const tap = screen.getByRole('button', { name: /탭해서 달리기/ })
   for (let s = 0; s < 32; s++) {
-    for (let i = 0; i < 4; i++) fireEvent.pointerDown(tap)
+    for (let i = 0; i < 8; i++) fireEvent.pointerDown(tap)
     await act(async () => { vi.advanceTimersByTime(1000) })
   }
   expect(screen.getByRole('heading', { name: '0:30 생존 성공!' })).toBeTruthy()
