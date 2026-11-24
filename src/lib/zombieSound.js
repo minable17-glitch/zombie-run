@@ -1,5 +1,6 @@
 // 🧟 체험 판 좀비 접근 소리 — 팔을 흔드느라 화면을 못 볼 때 귀로 알게.
-// (1) 좀비 울음소리: 가까울수록 크고 자주. 파일 없이 Web Audio 로 합성한다(톱니파 + 떨림 + 잡음).
+// (1) 좀비 울음소리: 가까울수록 크고 자주. public/sfx 의 CC0 녹음(출처는 public/sfx/CREDITS.md)을 Web Audio 로 틀고,
+//     파일을 아직 못 받았거나 못 읽으면 합성 소리(톱니파 + 떨림 + 잡음)로 대신한다.
 // (2) 거리 음성: 50·40·30·20·10m 를 새로 지날 때만 폰의 한국어 음성으로 읽는다. 멀어졌다 다시 오면 또 읽는다.
 // 브라우저는 버튼을 누른 순간에만 소리를 켤 수 있어서, 체험 시작 버튼에서 unlock() 을 부른다.
 
@@ -12,7 +13,7 @@ export function growlPlan(distanceM) {
   if (!Number.isFinite(distanceM) || distanceM > 70) return null
   const near = Math.min(1, Math.max(0, (70 - distanceM) / 62)) // 70m → 0, 8m → 1
   return {
-    intervalMs: distanceM <= 15 ? 900 : distanceM <= 30 ? 1600 : distanceM <= 50 ? 2600 : 4000,
+    intervalMs: distanceM <= 15 ? 1300 : distanceM <= 30 ? 2000 : distanceM <= 50 ? 3000 : 4500, // 녹음이 1~1.5초라 너무 겹치지 않게
     volume: 0.15 + near * 0.85,
   }
 }
@@ -35,12 +36,21 @@ export function createCalloutTracker() {
   }
 }
 
+export const GROWL_FILES = ['growl1.mp3', 'growl2.mp3', 'growl3.mp3', 'growl4.mp3']
+export const ATTACK_FILE = 'attack.mp3'
+
 export function createZombieAudio({
   AudioContextImpl = globalThis.AudioContext || globalThis.webkitAudioContext,
   speech = globalThis.speechSynthesis,
   Utterance = globalThis.SpeechSynthesisUtterance,
+  baseUrl = (import.meta.env?.BASE_URL ?? '/') + 'sfx/',
+  fetchImpl = globalThis.fetch,
 } = {}) {
   let ctx = null
+  let growls = [] // 받아 둔 울음소리 AudioBuffer
+  let attack = null
+  let loading = null
+  let lastGrowlIdx = -1
   let lastGrowlAt = -Infinity
   let lastSpeakAt = -Infinity
   let callouts = createCalloutTracker()
@@ -60,8 +70,38 @@ export function createZombieAudio({
     } catch { return false }
   }
 
+  const load = () => {
+    if (loading || !ctx || !fetchImpl) return
+    const get = name => fetchImpl(baseUrl + name).then(r => r.arrayBuffer())
+      .then(data => new Promise((resolve, reject) => ctx.decodeAudioData(data, resolve, reject))).catch(() => null)
+    loading = Promise.all([Promise.all(GROWL_FILES.map(get)), get(ATTACK_FILE)]).then(([g, a]) => {
+      growls = g.filter(Boolean)
+      attack = a
+    })
+  }
+
+  const playBuffer = (buffer, volume) => {
+    const src = ctx.createBufferSource()
+    src.buffer = buffer
+    src.playbackRate.value = 0.92 + Math.random() * 0.16 // 매번 조금 다른 목소리
+    const gain = ctx.createGain()
+    gain.gain.value = volume
+    src.connect(gain).connect(ctx.destination)
+    src.start()
+  }
+
   const growl = (volume, long = false) => {
     if (!ctx) return
+    try {
+      if (long && attack) return playBuffer(attack, volume)
+      if (growls.length) {
+        // 같은 소리가 연달아 나오지 않게
+        let i = Math.floor(Math.random() * growls.length)
+        if (growls.length > 1 && i === lastGrowlIdx) i = (i + 1) % growls.length
+        lastGrowlIdx = i
+        return playBuffer(growls[i], volume)
+      }
+    } catch { /* 파일 재생이 안 되면 아래 합성 소리로 */ }
     try {
       const t = ctx.currentTime
       const dur = long ? 1.4 : 0.85
@@ -108,6 +148,7 @@ export function createZombieAudio({
       try {
         if (!ctx && AudioContextImpl) ctx = new AudioContextImpl()
         void ctx?.resume?.()
+        load()
       } catch { ctx = null }
       try { speech?.cancel?.(); if (Utterance) speech?.speak?.(Object.assign(new Utterance(''), { volume: 0 })) } catch { /* ignore */ }
     },

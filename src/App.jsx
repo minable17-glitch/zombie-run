@@ -14,6 +14,7 @@ import { trialStart, trialFinish, trialBoard } from './lib/trialApi.js'
 import { startSolo, updateSolo, soloBoard } from './lib/runnerApi.js'
 import { rankPlayers } from './lib/leaderboard.js'
 import { createProximityAlert } from './lib/proximityAlert.js'
+import { createZombieAudio } from './lib/zombieSound.js'
 import { createRoomReporter } from './lib/roomReporter.js'
 import { formatDistance, haversineDistance } from './lib/geo.js'
 import { fetchWalkingPath } from './lib/routing.js'
@@ -113,6 +114,18 @@ function GameApp() {
   const vibrationEnabled = useRef(true)
   const proximityRef = useRef(null)
   if (!proximityRef.current) proximityRef.current = createProximityAlert(pattern => navigator.vibrate?.(pattern))
+  // 체험 판 좀비 소리(울음소리 + 거리 음성) — 팔을 흔드느라 화면을 못 볼 때 귀로 알게
+  const [soundOn, setSoundOn] = useState(true)
+  const soundEnabled = useRef(true)
+  const zombieAudioRef = useRef(null)
+  if (!zombieAudioRef.current) zombieAudioRef.current = createZombieAudio()
+  const toggleSound = () => {
+    const next = !soundEnabled.current
+    soundEnabled.current = next
+    setSoundOn(next)
+    if (next) zombieAudioRef.current.unlock()
+    else zombieAudioRef.current.stop()
+  }
   const toggleVibration = () => {
     const next = !vibrationEnabled.current
     vibrationEnabled.current = next
@@ -202,6 +215,10 @@ function GameApp() {
       clearInterval(tickIntervalRef.current)
       shakeRef.current?.stop()
       proximityRef.current.stop()
+      if (game.trial) {
+        zombieAudioRef.current.stop()
+        if (reason === 'goal_reached' && soundEnabled.current) zombieAudioRef.current.say('생존 성공!')
+      }
       if (game.roomId || game.soloId) {
         setSaveState('saving')
         reporterRef.current?.submit({ distance: game.distance, health: game.health,
@@ -247,7 +264,9 @@ function GameApp() {
     const result = advanceGame(game, dt, now)
     result.messages.forEach(toast)
     // 체험 판: 좀비에게 잡히면 길게 두 번 — 다가올 때의 짧은 진동과 구분되게
-    const hit = game.trial && game.health < healthBefore && vibrationEnabled.current
+    const caughtNow = game.trial && game.health < healthBefore
+    const hit = caughtNow && vibrationEnabled.current
+    if (caughtNow && soundEnabled.current) zombieAudioRef.current.hit(now)
     if (result.endReason) {
       endGame(result.endReason)
       if (hit) navigator.vibrate?.([500, 120, 500])
@@ -261,6 +280,7 @@ function GameApp() {
       : nearest
     proximityRef.current.update(alertDistance, now, vibrationEnabled.current && now >= game.frozenUntil)
     if (hit) navigator.vibrate?.([500, 120, 500])
+    if (game.trial && !caughtNow) zombieAudioRef.current.update(nearest, now, soundEnabled.current && now >= game.frozenUntil)
 
     const needsRoute = findRouteCandidate(game, now)
       if (needsRoute && ORS_API_KEY) {
@@ -503,6 +523,9 @@ function GameApp() {
 
   const startTrial = useCallback(async opts => {
     trialRef.current = opts
+    // 소리도 이 탭 안에서 켜야 한다(브라우저 규칙)
+    if (soundEnabled.current) zombieAudioRef.current.unlock()
+    zombieAudioRef.current.reset()
     // 팔 흔들기: 아이폰은 이 탭 안(다른 await 보다 먼저)에서 허락을 받아야 동작 센서를 읽는다 — 거절돼도 탭으로 달릴 수 있으니 그대로 시작
     // 거절이라고 나와도 센서가 신호를 주는 기기가 있어 듣기는 계속한다 — 신호가 없으면 게임 화면에서 탭하라고 알려 준다
     const swing = Boolean(opts.indoor && opts.swing)
@@ -983,6 +1006,7 @@ function GameApp() {
           </button>
         )}
         {game.soloId && <button className="zr-badge" aria-label="내 최고 기록과 전체 랭킹" aria-expanded={showTeammates} onClick={() => setShowTeammates(v => !v)}>{personalBoard?.me ? `${personalBoard.me.rank}위` : '기록'}</button>}
+        {game.trial && <button className="zr-badge" aria-label="좀비 소리" aria-pressed={soundOn} onClick={toggleSound}>소리<br />{soundOn ? 'ON' : 'OFF'}</button>}
         {typeof navigator.vibrate === 'function' && <button className="zr-badge" aria-label={paceRun ? '에너지 감소 진동' : '좀비 접근 진동'} aria-pressed={vibrationOn} onClick={toggleVibration}>진동<br />{vibrationOn ? 'ON' : 'OFF'}</button>}
       </div>
 
