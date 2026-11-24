@@ -338,6 +338,19 @@ export function summonFirstWave(game, now) {
   return true
 }
 
+// 체험 판 긴장감: 짧은 판이라 좀비를 따돌리면 그냥 끝나 버린다. 멀어질수록 좀비가 따라붙고(20m부터, 60m면 1.9배)
+// 시간이 갈수록 조금씩 빨라진다(끝날 때 1.2배) — 잘 달리면 좀비가 30m쯤 뒤에서 계속 쫓아오는 느낌이 된다.
+export const TRIAL_CATCHUP_START_M = 20
+export const TRIAL_CATCHUP_FULL_M = 60
+export const TRIAL_CATCHUP_MAX = 0.9
+export const TRIAL_RAMP_MAX = 0.2
+export function trialSpeedFactor(game, distanceM) {
+  if (!game.trial) return 1
+  const gap = Math.min(1, Math.max(0, (distanceM - TRIAL_CATCHUP_START_M) / (TRIAL_CATCHUP_FULL_M - TRIAL_CATCHUP_START_M)))
+  const progress = game.missionGoalSec > 0 ? Math.min(1, game.elapsedSec / game.missionGoalSec) : 0
+  return (1 + gap * TRIAL_CATCHUP_MAX) * (1 + progress * TRIAL_RAMP_MAX)
+}
+
 function spawnWave(game, now, emit) {
     if (!game.playerPos) return
     const room = MAX_CONCURRENT_ZOMBIES - game.zombies.length
@@ -438,13 +451,14 @@ export function advanceGame(game, dt, now) {
           const { lat, lon, patrolIndex, patrolDir } = stepPatrol(z, dt)
           return { ...z, state: 'patrol', lat, lon, patrolIndex, patrolDir, path: null, chaseHome: null }
         }
+        const step = z.speed * dt * trialSpeedFactor(game, haversineDistance(z.lat, z.lon, game.playerPos.lat, game.playerPos.lon))
         const stalePath = z.pathFetchedFor && (
           now-z.lastRouteAt>20000 || haversineDistance(z.pathFetchedFor.lat,z.pathFetchedFor.lon,game.playerPos.lat,game.playerPos.lon)>35)
         if (!stalePath && z.path && z.path.length > 1) {
-          const { pos, path } = advanceAlongPath(z.path, z.speed * dt)
+          const { pos, path } = advanceAlongPath(z.path, step)
           return { ...z, lat: pos.lat, lon: pos.lon, path }
         }
-        const next = moveToward(z.lat, z.lon, game.playerPos.lat, game.playerPos.lon, z.speed * dt)
+        const next = moveToward(z.lat, z.lon, game.playerPos.lat, game.playerPos.lon, step)
         return { ...z, lat: next.lat, lon: next.lon, path: null }
       })
 

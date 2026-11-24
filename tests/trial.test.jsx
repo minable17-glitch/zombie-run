@@ -195,3 +195,13 @@ test('arm swing still counts when the gyro never settles low between swings, or 
   expect(runner.reading.acc).toBeGreaterThan(3) // last 2s window: acceleration swings only
   runner.stop()
 })
+
+test('trial zombies close in when left far behind and speed up as time runs out', async () => {
+  const { trialSpeedFactor } = await import('../src/lib/gameEngine.js')
+  const game = { trial: true, elapsedSec: 0, missionGoalSec: 60 }
+  expect(trialSpeedFactor(game, 15)).toBe(1)
+  expect(trialSpeedFactor(game, 40)).toBeCloseTo(1.45)
+  expect(trialSpeedFactor(game, 200)).toBeCloseTo(1.9)
+  expect(trialSpeedFactor({ ...game, elapsedSec: 60 }, 15)).toBeCloseTo(1.2)
+  expect(trialSpeedFactor({ trial: false }, 200)).toBe(1)
+})
