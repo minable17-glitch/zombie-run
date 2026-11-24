@@ -3,6 +3,7 @@ import GameIcon from './GameIcon.jsx'
 import TrialBoard from './TrialBoard.jsx'
 import { TRIAL_DURATIONS_SEC, DEFAULT_TRIAL_SEC, TRIAL_NAME_MAX, TRIAL_PACE_IDX, loadTrialName } from './lib/trial.js'
 import { PACE_PRESETS } from './lib/gameConfig.js'
+import { SOUND_PACKS, DEFAULT_SOUND_PACK } from './lib/zombieSound.js'
 import { TRIAL_PACE_BONUS } from './lib/trialApi.js'
 import { trialBoard } from './lib/trialApi.js'
 
@@ -10,10 +11,11 @@ const durationLabel = sec => (sec < 60 ? `${sec}초` : `${sec / 60}분`)
 
 // 로그인 없이 바로 해 보는 짧은 생존 판 — 실내(탭)/실외(GPS)와 시간만 고른다
 // ranking 이 켜져 있으면 이름을 받아 오늘 순위에 올린다 (이름을 비우면 순위 없이 체험만)
-export default function TrialStart({ onStart, onBack, starting, error, initial, ranking = false }) {
+export default function TrialStart({ onStart, onBack, starting, error, initial, ranking = false, onPreviewSound }) {
   const [indoor, setIndoor] = useState(initial?.indoor ?? true)
   const [seconds, setSeconds] = useState(initial?.seconds ?? DEFAULT_TRIAL_SEC)
   const [swing, setSwing] = useState(initial?.swing ?? false)
+  const [soundPack, setSoundPack] = useState(initial?.soundPack ?? DEFAULT_SOUND_PACK)
   const [paceIdx, setPaceIdx] = useState(initial?.paceIdx ?? TRIAL_PACE_IDX)
   const [name, setName] = useState(initial?.name ?? loadTrialName())
   const [board, setBoard] = useState(null) // { key, rows | error }
@@ -71,6 +73,13 @@ export default function TrialStart({ onStart, onBack, starting, error, initial, 
               onClick={() => setPaceIdx(i)}>{p.label.replace('/km', '')}{ranking && TRIAL_PACE_BONUS[i] > 1 && <small> ×{TRIAL_PACE_BONUS[i]}</small>}</button>
           ))}
         </div>
+        <p className="zr-pace-label">좀비 소리 <small>(누르면 미리 들려요)</small></p>
+        <div className="zr-pace-picker zr-sound-picker">
+          {Object.entries(SOUND_PACKS).map(([key, pack]) => (
+            <button key={key} aria-pressed={soundPack === key} className={soundPack === key ? 'zr-pace-btn zr-pace-btn-on' : 'zr-pace-btn'}
+              onClick={() => { setSoundPack(key); onPreviewSound?.(key) }}>{key} · {pack.label}{key === DEFAULT_SOUND_PACK && <small> 기본</small>}</button>
+          ))}
+        </div>
         <p className="zr-mode-description">생명 3개 · 좀비에 닿으면 하나씩 줄어요.{ranking ? '' : ' 기록은 저장되지 않아요.'}</p>
 
         {ranking && <>
@@ -80,7 +89,7 @@ export default function TrialStart({ onStart, onBack, starting, error, initial, 
         </>}
 
         {error && <p className="zr-error" role="alert">{error}</p>}
-        <button className="zr-btn zr-btn-primary" disabled={starting} onClick={() => onStart({ indoor, swing: indoor && swing, seconds, paceIdx, name: name.trim() })}>
+        <button className="zr-btn zr-btn-primary" disabled={starting} onClick={() => onStart({ indoor, swing: indoor && swing, seconds, paceIdx, soundPack, name: name.trim() })}>
           <GameIcon name="run" size={21} />
           <span>{starting ? (indoor ? '준비 중…' : '위치 확인 중…') : '체험 시작'}</span>
         </button>

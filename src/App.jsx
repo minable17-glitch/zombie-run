@@ -14,7 +14,7 @@ import { trialStart, trialFinish, trialBoard } from './lib/trialApi.js'
 import { startSolo, updateSolo, soloBoard } from './lib/runnerApi.js'
 import { rankPlayers } from './lib/leaderboard.js'
 import { createProximityAlert } from './lib/proximityAlert.js'
-import { createZombieAudio } from './lib/zombieSound.js'
+import { createZombieAudio, DEFAULT_SOUND_PACK } from './lib/zombieSound.js'
 import { createRoomReporter } from './lib/roomReporter.js'
 import { formatDistance, haversineDistance } from './lib/geo.js'
 import { fetchWalkingPath } from './lib/routing.js'
@@ -524,6 +524,7 @@ function GameApp() {
   const startTrial = useCallback(async opts => {
     trialRef.current = opts
     // 소리도 이 탭 안에서 켜야 한다(브라우저 규칙)
+    zombieAudioRef.current.setPack(opts.soundPack ?? DEFAULT_SOUND_PACK)
     if (soundEnabled.current) zombieAudioRef.current.unlock()
     zombieAudioRef.current.reset()
     // 팔 흔들기: 아이폰은 이 탭 안(다른 await 보다 먼저)에서 허락을 받아야 동작 센서를 읽는다 — 거절돼도 탭으로 달릴 수 있으니 그대로 시작
@@ -622,7 +623,8 @@ function GameApp() {
   }
 
   if (mode === 'trial') {
-    return <TrialStart starting={starting} error={geoError} onStart={startTrial} initial={trialRef.current} ranking={Boolean(supabase)}
+    return <TrialStart starting={starting} error={geoError} onStart={startTrial} initial={trialRef.current}
+      onPreviewSound={key => zombieAudioRef.current.preview(key)} ranking={Boolean(supabase)}
       onBack={isTrialEntry() ? null : () => setMode('game')} />
   }
 

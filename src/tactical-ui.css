@@ -1310,3 +1310,5 @@ button:active:not(:disabled) {
 @keyframes zr-trial-danger { from { box-shadow: 0 0 0 4px #ff5a5f33, 0 10px 30px #0008; } to { box-shadow: 0 0 0 14px #ff5a5f66, 0 10px 30px #0008; } }
 @media (prefers-reduced-motion: reduce) { .zr-trial-tap-danger { animation: none; box-shadow: 0 0 0 10px #ff5a5f55; } }
 .zr-trial-name { width: 100%; box-sizing: border-box; margin-bottom: 10px; }
+.zr-sound-picker { grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); }
+.zr-sound-picker .zr-pace-btn { font-size: 13px; }

@@ -1,12 +1,15 @@
 // 🧟 체험 판 좀비 접근 소리 — 팔을 흔드느라 화면을 못 볼 때 귀로 알게.
 // (1) 좀비 울음소리: 가까울수록 크고 자주. public/sfx 의 CC0 녹음(출처는 public/sfx/CREDITS.md)을 Web Audio 로 틀고,
 //     파일을 아직 못 받았거나 못 읽으면 합성 소리(톱니파 + 떨림 + 잡음)로 대신한다.
-// (2) 거리 음성: 50·40·30·20·10m 를 새로 지날 때만 폰의 한국어 음성으로 읽는다. 멀어졌다 다시 오면 또 읽는다.
+// (2) 거리 음성: 50·40·30·20·10m 를 새로 지날 때 폰의 한국어 음성으로 읽고, 30m 안에 붙어 있는 동안은 5초마다 지금 거리를 다시 읽는다
+//     (좀비가 따라붙어 20~30m 에 머물면 단계를 새로 안 지나서 조용했다).
 // 브라우저는 버튼을 누른 순간에만 소리를 켤 수 있어서, 체험 시작 버튼에서 unlock() 을 부른다.
 
 export const CALLOUT_STEPS_M = [50, 40, 30, 20, 10]
 const CALLOUT_RESET_M = 6 // 이만큼 다시 멀어져야 같은 거리를 또 읽는다
 const SPEAK_GAP_MS = 1200
+export const NEAR_REPEAT_M = 30
+export const NEAR_REPEAT_MS = 5000
 
 // 거리별 울음 간격(ms)·크기(0~1). 70m 밖이면 조용히
 export function growlPlan(distanceM) {
@@ -20,6 +23,12 @@ export function growlPlan(distanceM) {
 
 export function calloutText(step) {
   return step <= 10 ? '10미터! 빨리!' : `좀비 ${step}미터`
+}
+
+// 가까이 붙어 있을 때 되풀이하는 말 — 5m 단위로
+export function nearText(distanceM) {
+  if (distanceM <= 12) return '바로 뒤! 빨리!'
+  return `좀비 ${Math.round(distanceM / 5) * 5}미터`
 }
 
 // 거리 읽기 판단만 따로 — 소리 장치 없이 시험할 수 있게
@@ -36,8 +45,16 @@ export function createCalloutTracker() {
   }
 }
 
-export const GROWL_FILES = ['growl1.mp3', 'growl2.mp3', 'growl3.mp3', 'growl4.mp3']
-export const ATTACK_FILE = 'attack.mp3'
+// 체험 시작 화면에서 고르는 소리 묶음(public/sfx/<key>/). 기본은 A. 출처는 public/sfx/CREDITS.md
+const range = (from, to, skip = []) => Array.from({ length: to - from + 1 }, (_, i) => `${from + i}.mp3`).filter(f => !skip.includes(f))
+export const SOUND_PACKS = {
+  A: { label: '으르렁', growls: range(1, 23, ['17.mp3']), attack: '17.mp3' },
+  U: { label: '언데드 신음', growls: ['2.mp3', '3.mp3', '4.mp3'], attack: '1.mp3' },
+  D: { label: '길게 앓는 소리', growls: ['1.mp3', '2.mp3', '3.mp3'], attack: '4.mp3' },
+  I: { label: '거친 괴성', growls: ['2.mp3', '3.mp3', '4.mp3'], attack: '1.mp3' },
+  S: { label: '목소리 좀비', growls: ['1.mp3', '2.mp3', '3.mp3', '4.mp3'], attack: 'attack.mp3' },
+}
+export const DEFAULT_SOUND_PACK = 'A'
 
 export function createZombieAudio({
   AudioContextImpl = globalThis.AudioContext || globalThis.webkitAudioContext,
@@ -54,16 +71,28 @@ export function createZombieAudio({
   let lastGrowlAt = -Infinity
   let lastSpeakAt = -Infinity
   let callouts = createCalloutTracker()
+  let packKey = DEFAULT_SOUND_PACK
+  let speaking = null // 크롬은 말하는 도중 utterance 가 지워지면 말이 끊겨서 붙잡아 둔다
 
+  // 한국어 음성이 따로 있으면 그걸로 — 없는 폰은 lang 만 맞춰 기본 음성에 맡긴다
+  const koreanVoice = () => {
+    try { return speech.getVoices?.().find(v => /^ko/i.test(v.lang)) ?? null } catch { return null }
+  }
   const say = (text, now = Date.now(), force = false) => {
     if (!speech || !Utterance) return false
-    if (!force && now - lastSpeakAt < SPEAK_GAP_MS) return false
+    if (!force && (now - lastSpeakAt < SPEAK_GAP_MS || speech.speaking)) return false
     try {
-      speech.cancel()
+      // 끊고 바로 말하면 안드로이드 크롬이 새 말을 삼키는 일이 있어, 말하는 중일 때만 끊는다
+      if (speech.speaking || speech.pending) speech.cancel()
       const u = new Utterance(text)
       u.lang = 'ko-KR'
-      u.rate = 1.15
+      const voice = koreanVoice()
+      if (voice) u.voice = voice
+      u.rate = 1.1
       u.volume = 1
+      u.onend = () => { if (speaking === u) speaking = null }
+      speaking = u
+      speech.resume?.()
       speech.speak(u)
       lastSpeakAt = now
       return true
@@ -72,9 +101,12 @@ export function createZombieAudio({
 
   const load = () => {
     if (loading || !ctx || !fetchImpl) return
-    const get = name => fetchImpl(baseUrl + name).then(r => r.arrayBuffer())
+    const pack = SOUND_PACKS[packKey] ?? SOUND_PACKS[DEFAULT_SOUND_PACK]
+    const key = packKey
+    const get = name => fetchImpl(`${baseUrl}${key}/${name}`).then(r => r.arrayBuffer())
       .then(data => new Promise((resolve, reject) => ctx.decodeAudioData(data, resolve, reject))).catch(() => null)
-    loading = Promise.all([Promise.all(GROWL_FILES.map(get)), get(ATTACK_FILE)]).then(([g, a]) => {
+    const done = loading = Promise.all([Promise.all(pack.growls.map(get)), get(pack.attack)]).then(([g, a]) => {
+      if (loading !== done) return // 그 사이 다른 묶음을 골랐다
       growls = g.filter(Boolean)
       attack = a
     })
@@ -150,7 +182,25 @@ export function createZombieAudio({
         void ctx?.resume?.()
         load()
       } catch { ctx = null }
-      try { speech?.cancel?.(); if (Utterance) speech?.speak?.(Object.assign(new Utterance(''), { volume: 0 })) } catch { /* ignore */ }
+      // 음성도 버튼을 누른 이 순간에 한 번 말해 둬야 나중에(버튼 없이) 말할 수 있다 — 빈 글자는 무시하는 폰이 있어 공백 한 칸
+      try { if (Utterance && speech) { speech.getVoices?.(); speech.speak(Object.assign(new Utterance(' '), { volume: 0, lang: 'ko-KR' })) } } catch { /* ignore */ }
+    },
+    setPack(key) {
+      const next = SOUND_PACKS[key] ? key : DEFAULT_SOUND_PACK
+      if (next === packKey) return
+      packKey = next
+      growls = []
+      attack = null
+      loading = null
+      load()
+    },
+    get pack() { return packKey },
+    // 시작 화면에서 묶음 미리듣기
+    preview(key) {
+      this.unlock()
+      this.setPack(key)
+      const play = () => growl(0.9)
+      if (loading) loading.then(play); else play()
     },
     reset() {
       callouts = createCalloutTracker()
@@ -164,6 +214,9 @@ export function createZombieAudio({
       if (plan && now - lastGrowlAt >= plan.intervalMs) { growl(plan.volume); lastGrowlAt = now }
       const step = callouts(distanceM)
       if (step != null && say(calloutText(step), now, step <= 10)) return step
+      // 30m 안에 붙어 있으면 5초마다 지금 거리
+      if (Number.isFinite(distanceM) && distanceM <= NEAR_REPEAT_M && now - lastSpeakAt >= NEAR_REPEAT_MS
+        && say(nearText(distanceM), now)) return Math.round(distanceM)
       return null
     },
     hit(now = Date.now()) { growl(1, true); say('잡혔다! 생명 하나 줄었어요', now, true) },
