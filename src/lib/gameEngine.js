@@ -400,7 +400,9 @@ export function advanceGame(game, dt, now) {
       return { messages, endReason: advancePaceMission(game, dt, emit) }
     }
 
-    if (game.playerPos && !frozen && game.elapsedSec >= game.nextWaveSec) {
+    // 체험 판은 달리는 방향을 알 때까지(최대 15초) 첫 좀비를 미룬다 — 방향을 모르면 아무 데나 나와서 달려가는 앞쪽에 생길 수 있다
+    const waitHeading = game.trial && game.waveCount === 0 && game.headingDeg == null && game.elapsedSec < game.nextWaveSec + 15
+    if (game.playerPos && !frozen && game.elapsedSec >= game.nextWaveSec && !waitHeading) {
       if (game.presetMap) {
         const reinforcement=patrolReinforcement(game,now)
         if (reinforcement) {

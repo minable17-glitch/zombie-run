@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import GameIcon from './GameIcon.jsx'
 import TrialBoard from './TrialBoard.jsx'
-import { TRIAL_DURATIONS_SEC, DEFAULT_TRIAL_SEC, TRIAL_NAME_MAX, loadTrialName } from './lib/trial.js'
+import { TRIAL_DURATIONS_SEC, DEFAULT_TRIAL_SEC, TRIAL_NAME_MAX, TRIAL_PACE_IDX, loadTrialName } from './lib/trial.js'
+import { PACE_PRESETS } from './lib/gameConfig.js'
+import { TRIAL_PACE_BONUS } from './lib/trialApi.js'
 import { trialBoard } from './lib/trialApi.js'
 
 const durationLabel = sec => (sec < 60 ? `${sec}초` : `${sec / 60}분`)
@@ -11,6 +13,7 @@ const durationLabel = sec => (sec < 60 ? `${sec}초` : `${sec / 60}분`)
 export default function TrialStart({ onStart, onBack, starting, error, initial, ranking = false }) {
   const [indoor, setIndoor] = useState(initial?.indoor ?? true)
   const [seconds, setSeconds] = useState(initial?.seconds ?? DEFAULT_TRIAL_SEC)
+  const [paceIdx, setPaceIdx] = useState(initial?.paceIdx ?? TRIAL_PACE_IDX)
   const [name, setName] = useState(initial?.name ?? loadTrialName())
   const [board, setBoard] = useState(null) // { key, rows | error }
   const boardKey = `${indoor}:${seconds}`
@@ -46,6 +49,13 @@ export default function TrialStart({ onStart, onBack, starting, error, initial, 
               onClick={() => setSeconds(sec)}>{durationLabel(sec)}</button>
           ))}
         </div>
+        <p className="zr-pace-label">좀비 속도</p>
+        <div className="zr-pace-picker">
+          {PACE_PRESETS.map((p, i) => (
+            <button key={p.label} aria-pressed={paceIdx === i} className={paceIdx === i ? 'zr-pace-btn zr-pace-btn-on' : 'zr-pace-btn'}
+              onClick={() => setPaceIdx(i)}>{p.label.replace('/km', '')}{ranking && TRIAL_PACE_BONUS[i] > 1 && <small> ×{TRIAL_PACE_BONUS[i]}</small>}</button>
+          ))}
+        </div>
         <p className="zr-mode-description">생명 3개 · 좀비에 닿으면 하나씩 줄어요.{ranking ? '' : ' 기록은 저장되지 않아요.'}</p>
 
         {ranking && <>
@@ -55,7 +65,7 @@ export default function TrialStart({ onStart, onBack, starting, error, initial, 
         </>}
 
         {error && <p className="zr-error" role="alert">{error}</p>}
-        <button className="zr-btn zr-btn-primary" disabled={starting} onClick={() => onStart({ indoor, seconds, name: name.trim() })}>
+        <button className="zr-btn zr-btn-primary" disabled={starting} onClick={() => onStart({ indoor, seconds, paceIdx, name: name.trim() })}>
           <GameIcon name="run" size={21} />
           <span>{starting ? (indoor ? '준비 중…' : '위치 확인 중…') : '체험 시작'}</span>
         </button>

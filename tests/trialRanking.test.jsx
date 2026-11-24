@@ -41,7 +41,7 @@ test('a named trial is entered into today\'s ranking and the result shows the bo
   fireEvent.click(screen.getByRole('button', { name: '30초' }))
   fireEvent.change(screen.getByLabelText(/이름/), { target: { value: ' 민수 ' } })
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: /체험 시작/ })) })
-  expect(rpc).toHaveBeenCalledWith('zr_trial_start', { p_name: '민수', p_indoor: true, p_seconds: 30 })
+  expect(rpc).toHaveBeenCalledWith('zr_trial_start', { p_name: '민수', p_indoor: true, p_seconds: 30, p_pace: 3 })
   expect(localStorage.getItem('zr-trial-name')).toBe('민수')
   const tap = screen.getByRole('button', { name: /탭해서 달리기/ })
   for (let s = 0; s < 32; s++) {

@@ -3,7 +3,7 @@ import { beforeAll, afterAll, test, expect } from 'vitest'
 import { PGlite } from '@electric-sql/pglite'
 import { readFileSync } from 'node:fs'
 
-const migration = ['20260909140000_zombie_run_security.sql', '20260910010000_room_expiration.sql', '20260911030000_legacy_profile_lookup.sql', '20260916010000_map_boundary.sql', '20260921010000_room_survival_rank.sql', '20260922010000_personal_survival.sql', '20260922020000_finished_rooms.sql', '20260923010000_solo_maps.sql', '20260923020000_six_digit_codes.sql', '20260923021000_code_attempt_guard.sql', '20260928010000_zombie_run_link.sql', '20260928020000_school_pause_state.sql', '20261014010000_self_chosen_signup_code.sql', '20261014020000_distance_goal_missions.sql', '20261016010000_time_goal_missions.sql', '20261019010000_pace_hold_missions.sql', '20261025010000_pace_energy_missions.sql', '20261027010000_trial_ranking.sql']
+const migration = ['20260909140000_zombie_run_security.sql', '20260910010000_room_expiration.sql', '20260911030000_legacy_profile_lookup.sql', '20260916010000_map_boundary.sql', '20260921010000_room_survival_rank.sql', '20260922010000_personal_survival.sql', '20260922020000_finished_rooms.sql', '20260923010000_solo_maps.sql', '20260923020000_six_digit_codes.sql', '20260923021000_code_attempt_guard.sql', '20260928010000_zombie_run_link.sql', '20260928020000_school_pause_state.sql', '20261014010000_self_chosen_signup_code.sql', '20261014020000_distance_goal_missions.sql', '20261016010000_time_goal_missions.sql', '20261019010000_pace_hold_missions.sql', '20261025010000_pace_energy_missions.sql', '20261027010000_trial_ranking.sql', '20261124010000_trial_pace.sql']
   .map(name => readFileSync('supabase/migrations/' + name, 'utf8').replace(/^\uFEFF/, '').trim()).join('\n\n')
 const ids = {
   host: '00000000-0000-4000-8000-000000000001',
@@ -529,4 +529,17 @@ test('trial ranking: anyone can play, the server caps the score and keeps the be
   expect(board.map(r => [r.rank, r.name, r.score])).toEqual([[1, '지영', 570], [2, '민수', 440]])
   expect((await asAnon('select zr_trial_board(false,30) b')).rows[0].b).toEqual([])
   await expect(asAnon('select * from zr_private.trial_runs')).rejects.toThrow()
+})
+
+test('trial pace: faster zombies multiply the score and old 3-argument calls still work', async () => {
+  const asAnon = (sql, params = []) => db.transaction(async tx => { await tx.exec('set local role anon'); return tx.query(sql, params) })
+  const old = (await asAnon("select zr_trial_start(p_name=>'옛화면',p_indoor=>false,p_seconds=>30) id")).rows[0].id
+  const fast = (await asAnon("select zr_trial_start('빠름',false,30,0) id")).rows[0].id
+  await expect(asAnon("select zr_trial_start('x',false,30,4)")).rejects.toThrow()
+  await db.query("update zr_private.trial_runs set started_at=now()-interval '40 seconds' where id in ($1,$2)", [old, fast])
+  const finish = async id => (await asAnon('select zr_trial_finish($1,30,2,70) r', [id])).rows[0].r
+  expect(await finish(old)).toMatchObject({ score: 570, pace: 3 })
+  expect(await finish(fast)).toMatchObject({ score: 741, pace: 0, rank: 1 })
+  const board = (await asAnon('select zr_trial_board(false,30) b')).rows[0].b
+  expect(board.map(r => [r.name, r.score, r.pace])).toEqual([['빠름', 741, 0], ['옛화면', 570, 3]])
 })

@@ -9,7 +9,7 @@ import PersonalBoard from './PersonalBoard.jsx'
 import PaceGauge from './PaceGauge.jsx'
 import TrialStart from './TrialStart.jsx'
 import TrialBoard from './TrialBoard.jsx'
-import { isTrialEntry, createShakeRunner, saveTrialName, TRIAL_GAME, TRIAL_PACE_IDX } from './lib/trial.js'
+import { isTrialEntry, createShakeRunner, saveTrialName, loadIndoorRoute, TRIAL_GAME, TRIAL_PACE_IDX } from './lib/trial.js'
 import { trialStart, trialFinish, trialBoard } from './lib/trialApi.js'
 import { startSolo, updateSolo, soloBoard } from './lib/runnerApi.js'
 import { rankPlayers } from './lib/leaderboard.js'
@@ -263,7 +263,7 @@ function GameApp() {
     if (hit) navigator.vibrate?.([500, 120, 500])
 
     const needsRoute = findRouteCandidate(game, now)
-      if (needsRoute && ORS_API_KEY && !game.trial) {
+      if (needsRoute && ORS_API_KEY) {
         const runId = game.runId
         const turnaroundCount = game.turnaroundCount
         const targetId = needsRoute.id
@@ -405,7 +405,7 @@ function GameApp() {
           missionGoalM: config.missionGoalM || 0, missionGoalSec: config.missionGoalSec || 0,
           missionPaceKind: config.missionPaceKind || 0, missionPaceGoal: config.missionPaceGoal || 0,
           missionContinue: Boolean(config.missionContinue),
-          ...(trial ? { ...TRIAL_GAME, trial: true, trialIndoor: Boolean(trial.indoor), trialRunId: trial.runId ?? null, trialName: trial.name || '',
+          ...(trial ? { ...TRIAL_GAME, trial: true, trialIndoor: Boolean(trial.indoor), trialRunId: trial.runId ?? null, trialName: trial.name || '', trialPaceIdx: config.paceIdx,
             missionGoalM: 0, missionGoalSec: trial.seconds,
             missionPaceKind: 0, missionPaceGoal: 0, missionContinue: false } : {}),
         })
@@ -417,7 +417,7 @@ function GameApp() {
         })
         if (matched) toast('선택된 좀비 경로로 시작해요: ' + matched.name)
         if (trial?.indoor) {
-          const shake = createShakeRunner(startPos, { motion: false }) // 흔들기는 실제 폰에서 잘 안 잡혀 탭으로만 달린다
+          const shake = createShakeRunner(startPos, { motion: false, route: trial.route }) // 흔들기는 실제 폰에서 잘 안 잡혀 탭으로만 달린다
           shakeRef.current = shake
           watchIdRef.current = null
           tickIntervalRef.current = setInterval(() => {
@@ -458,7 +458,7 @@ function GameApp() {
         resolve(true)
       }
       if (virtualStart) {
-        queueMicrotask(() => beginWithPosition(makeTestPosition()))
+        queueMicrotask(() => beginWithPosition(makeTestPosition(Date.now(), 0, trial?.route?.[0])))
       } else {
         geoGetCurrentPosition(beginWithPosition,
           () => fail('위치를 확인하지 못했어요. 위치 권한을 확인하고 다시 시도해주세요.'),
@@ -504,12 +504,15 @@ function GameApp() {
     trialRef.current = opts
     // 이름을 넣었으면 순위용 판을 서버에 연다 — 실패해도 체험은 그대로 (순위만 빠짐)
     let runId = null
+    const paceIdx = opts.paceIdx ?? TRIAL_PACE_IDX
     if (opts.name && supabase && !isLocalTestMode()) {
       saveTrialName(opts.name)
-      try { runId = await trialStart(opts.name, opts.indoor, opts.seconds) }
+      try { runId = await trialStart(opts.name, opts.indoor, opts.seconds, paceIdx) }
       catch (e) { toast('순위 연결 실패 · 이번 판은 순위 없이 해요 (' + e.message + ')') }
     }
-    const started = await startRun({ paceIdx: TRIAL_PACE_IDX, playMode: 'free' }, { trial: { ...opts, runId } })
+    // 실내는 실제 길(세종대로)을 따라 달리게 경로를 한 번 받아 둔다 — 좀비도 길을 따라 쫓아온다
+    const route = opts.indoor ? await loadIndoorRoute(ORS_API_KEY) : null
+    const started = await startRun({ paceIdx, playMode: 'free' }, { trial: { ...opts, runId, route } })
     if (started) setMode('game')
     return started
   }, [startRun, setMode, toast])

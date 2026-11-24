@@ -1,14 +1,19 @@
 import { formatTime } from './lib/gameEngine.js'
 import { formatDistance } from './lib/geo.js'
+import { PACE_PRESETS } from './lib/gameConfig.js'
+import { TRIAL_PACE_BONUS } from './lib/trialApi.js'
 
 const durationLabel = sec => (sec < 60 ? `${sec}초` : `${sec / 60}분`)
 
 // 체험 판 오늘 순위 — 같은 판(실내/실외 · 시간)끼리, 이름별 최고 점수
+const paceText = i => PACE_PRESETS[i]?.label.replace('/km', '') ?? ''
+
 export default function TrialBoard({ indoor, seconds, board, me, myName, state, error }) {
   return <section className="zr-ranking" aria-label="오늘 체험 순위">
     {me && <div className="zr-personal-achievement">
       <strong>{me.score}점 · 오늘 {me.rank}위</strong>
       <p>{formatTime(me.survived)} 버팀 ×10 + 생명 {me.lives}개 ×100 + {formatDistance(me.distance)}
+        {TRIAL_PACE_BONUS[me.pace] > 1 ? ` · 좀비 ${paceText(me.pace)} ×${TRIAL_PACE_BONUS[me.pace]}` : ''}
         {me.best > me.score ? ` · 내 최고 ${me.best}점` : ''}</p>
     </div>}
     <div className="zr-ranking-summary"><span>오늘의 순위 · {indoor ? '실내' : '실외'} {durationLabel(seconds)}</span></div>
@@ -18,11 +23,11 @@ export default function TrialBoard({ indoor, seconds, board, me, myName, state, 
       {board.map(p => <li key={p.name} className={`zr-ranking-row${p.name === myName ? ' zr-ranking-me' : ''}`}>
         <strong className="zr-ranking-place">{p.rank}<small>위</small></strong>
         <div className="zr-ranking-runner"><strong>{p.name}{p.name === myName ? ' (나)' : ''}</strong>
-          <small>{formatTime(p.survived)} · 생명 {p.lives} · {formatDistance(p.distance)}</small></div>
+          <small>{formatTime(p.survived)} · 생명 {p.lives} · {formatDistance(p.distance)}{p.pace != null ? ` · 좀비 ${paceText(p.pace)}` : ''}</small></div>
         <strong className="zr-ranking-time">{p.score}점</strong>
       </li>)}
     </ol>}
     {board?.length === 0 && <p className="zr-ranking-note">오늘 첫 기록의 주인공이 되어보세요.</p>}
-    <p className="zr-ranking-note">점수 = 버틴 초 ×10 + 남은 생명 ×100(끝까지 버텼을 때) + 달린 거리 1m당 1점 · 매일 새 순위</p>
+    <p className="zr-ranking-note">점수 = (버틴 초 ×10 + 남은 생명 ×100(끝까지 버텼을 때) + 달린 거리 1m당 1점) × 좀비 속도 배율(7'00" ×1 · 6'30" ×1.1 · 6'00" ×1.2 · 5'30" ×1.3) · 매일 새 순위</p>
   </section>
 }

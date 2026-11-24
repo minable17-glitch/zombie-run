@@ -1,12 +1,22 @@
 // 🧪 로그인 없는 좀비런 체험 — 발표·연수에서 듣는 사람이 바로 해 보게 하려는 짧은 생존 판.
 // 기록은 어디에도 저장하지 않는다. 실외는 실제 GPS, 실내는 휴대폰 흔들기(제자리 뛰기)로 가상 위치를 움직인다.
-import { destinationPoint } from './geo.js'
+import { destinationPoint, advanceAlongPath, bearingTo, haversineDistance } from './geo.js'
+import { fetchWalkingPath } from './routing.js'
 
 export const TRIAL_DURATIONS_SEC = [30, 60, 120]
 export const DEFAULT_TRIAL_SEC = 60
 export const TRIAL_PACE_IDX = 3 // 7'00"/km — 처음 해 보는 사람도 따돌릴 수 있게 가장 느린 좀비
 export const TRIAL_STRIDE_M = 1 // 흔들기 한 번 = 이만큼 앞으로 (초당 3번쯤 흔들면 좀비보다 조금 빠름)
-const TRIAL_HEADING_DEG = 45
+const TRIAL_HEADING_DEG = 0
+// 실내 체험은 서울광장 앞에서 세종대로를 따라 광화문 쪽으로 달린다 — 가상 위치가 건물을 뚫고 가지 않게 실제 길 위로.
+// 시작할 때 도보 경로(ORS)를 한 번 받아 쓰고, 못 받으면 세종대로를 대충 따라가는 이 점들로 대신한다.
+export const TRIAL_INDOOR_START = { lat: 37.5662, lon: 126.9771 }
+export const TRIAL_INDOOR_DEST = { lat: 37.5755, lon: 126.9769 }
+export const TRIAL_INDOOR_FALLBACK_ROUTE = [TRIAL_INDOOR_START, { lat: 37.5688, lon: 126.9772 }, { lat: 37.5712, lon: 126.9769 }, TRIAL_INDOOR_DEST]
+export async function loadIndoorRoute(apiKey) {
+  const path = await fetchWalkingPath(apiKey, TRIAL_INDOOR_START, TRIAL_INDOOR_DEST)
+  return path && path.length > 1 ? path : TRIAL_INDOOR_FALLBACK_ROUTE
+}
 
 // 1분 안에 좀비를 만나고 따돌려 봐야 하니 일찍·가까이 등장시키고, 생명도 줄인다
 export const TRIAL_GAME = {
@@ -74,7 +84,16 @@ export async function requestMotionPermission() {
 }
 
 // 탭(또는 흔들기)으로 움직이는 가상 위치. 체험 화면은 탭만 쓴다(motion: false) — 흔들기는 실제 폰에서 잘 안 잡혔다.
-export function createShakeRunner(start, { stride = TRIAL_STRIDE_M, onStep, motion = true } = {}) {
+// route 가 있으면 그 길을 따라 움직이고, 길이 끝나면 마지막 방향으로 계속 간다.
+export function createShakeRunner(start, { stride = TRIAL_STRIDE_M, onStep, motion = true, route = null } = {}) {
+  const path = route && route.length > 1 ? route : null
+  const pathLength = path ? path.slice(1).reduce((sum, p, i) => sum + haversineDistance(path[i].lat, path[i].lon, p.lat, p.lon), 0) : 0
+  const pointAt = meters => {
+    if (!path) return meters > 0 ? destinationPoint(start.lat, start.lon, meters, TRIAL_HEADING_DEG) : start
+    if (meters <= pathLength) return advanceAlongPath(path, meters).pos
+    const a = path[path.length - 2], b = path[path.length - 1]
+    return destinationPoint(b.lat, b.lon, meters - pathLength, bearingTo(a.lat, a.lon, b.lat, b.lon))
+  }
   let meters = 0
   let steps = 0
   let sensed = false
@@ -96,7 +115,7 @@ export function createShakeRunner(start, { stride = TRIAL_STRIDE_M, onStep, moti
     get sensed() { return sensed },
     // 지금까지 간 거리만큼 시작점에서 한 방향으로 옮긴 위치 — GPS 위치와 같은 모양으로
     position(now = Date.now()) {
-      const p = meters > 0 ? destinationPoint(start.lat, start.lon, meters, TRIAL_HEADING_DEG) : start
+      const p = pointAt(meters)
       return { timestamp: now, coords: { latitude: p.lat, longitude: p.lon, accuracy: 5 } }
     },
     stop() { globalThis.removeEventListener?.('devicemotion', onMotion) },

@@ -101,3 +101,42 @@ test('indoor trial runs by tapping only, vibrates as zombies close in and hard w
   expect(patterns).toContain('500,120,500') // 잡힘 진동
   delete navigator.vibrate
 })
+
+test('the tap runner follows a road route and keeps going straight past its end', async () => {
+  const { TRIAL_INDOOR_FALLBACK_ROUTE: route } = await import('../src/lib/trial.js')
+  const runner = createShakeRunner(route[0], { motion: false, route })
+  for (let i = 0; i < 300; i++) runner.step()
+  const p = runner.position(0).coords
+  expect(haversineDistance(route[0].lat, route[0].lon, p.latitude, p.longitude)).toBeGreaterThan(290)
+  expect(Math.abs(p.longitude - 126.977)).toBeLessThan(0.0005) // stays on 세종대로
+  for (let i = 0; i < 1500; i++) runner.step()
+  expect(runner.position(0).coords.latitude).toBeGreaterThan(route.at(-1).lat)
+})
+
+test('a trial holds the first zombie until the running direction is known, then spawns it behind', async () => {
+  const { makeInitialGame, advanceGame, updatePosition } = await import('../src/lib/gameEngine.js')
+  const { destinationPoint, bearingTo } = await import('../src/lib/geo.js')
+  const start = { lat: 37.5662, lon: 126.9771 }
+  const game = Object.assign(makeInitialGame(), { ...TRIAL_GAME, trial: true, status: 'playing', targetPaceMps: 2.4,
+    playerPos: start, lastPos: start, lastFix: { ...start, t: 0 }, movementAnchor: { ...start, t: 0 }, missionGoalSec: 60 })
+  for (let s = 1; s <= 6; s++) advanceGame(game, 1, s * 1000)
+  expect(game.zombies).toHaveLength(0) // standing still → no direction yet
+  for (let s = 7; s <= 12; s++) {
+    const p = destinationPoint(start.lat, start.lon, (s - 6) * 4, 0) // running north
+    updatePosition(game, { ...p, t: s * 1000, accuracy: 5 }, s * 1000)
+    advanceGame(game, 1, s * 1000)
+  }
+  expect(game.zombies.length).toBeGreaterThan(0)
+  for (const z of game.zombies) {
+    const b = bearingTo(game.playerPos.lat, game.playerPos.lon, z.lat, z.lon)
+    expect(Math.abs(b - 180)).toBeLessThanOrEqual(60) // behind (south)
+  }
+})
+
+test('the trial start screen lets you pick the zombie pace', async () => {
+  window.history.replaceState({}, '', '/?try=1')
+  await act(async () => { render(<App />) })
+  fireEvent.click(screen.getByRole('button', { name: /5'30"/ }))
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: /체험 시작/ })) })
+  expect(screen.getByText(/5'30"/)).toBeTruthy()
+})
