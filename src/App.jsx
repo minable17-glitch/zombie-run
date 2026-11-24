@@ -1005,6 +1005,7 @@ function GameApp() {
         {game.trialIndoor && <>
           <div role="status" className="zr-banner zr-banner-blue">{game.trialSwing
             ? `💪 휴대폰을 쥐고 달리듯 팔을 앞뒤로! 한 번 = 1m · ${shakeRef.current?.steps ?? 0}걸음`
+              + (shakeRef.current?.reading ? ` · 센서 회전 ${Math.round(shakeRef.current.reading.rot)} · 가속 ${shakeRef.current.reading.acc.toFixed(1)} · ${shakeRef.current.reading.rate}/초` : '')
             : `👇 아래 큰 버튼을 빠르게 연타! 한 번 = 1m · ${shakeRef.current?.steps ?? 0}걸음`}</div>
           {game.trialSwing && game.elapsedSec >= 4 && !shakeRef.current?.sensed && <div role="alert" className="zr-banner zr-banner-red">
             동작 센서 신호가 없어요 · 아래 버튼을 탭해서 달려 주세요</div>}

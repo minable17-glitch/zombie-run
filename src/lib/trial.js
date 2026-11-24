@@ -47,17 +47,22 @@ export function isTrialEntry(locationLike = globalThis.location) {
 // 흔들기 = 걸음. 중력을 뺀 가속도 크기가 위로 크게 튀었다가(peak) 다시 잠잠해져야(re-arm) 한 걸음으로 친다.
 // 너무 촘촘한 신호는 손떨림·되튐이라 MIN_GAP_MS 안에선 안 센다.
 const MIN_GAP_MS = 220
-export function createStepDetector({ peak = 4, rearm = 2, minGapMs = MIN_GAP_MS } = {}) {
+// relativeRearm 이 있으면 마지막 꼭대기의 그 비율 아래로만 내려와도 다시 셀 준비를 한다 —
+// 팔을 계속 흔들면 값이 rearm 까지 안 떨어지는 폰이 있어서(갤럭시에서 0걸음).
+export function createStepDetector({ peak = 4, rearm = 2, minGapMs = MIN_GAP_MS, relativeRearm = 0 } = {}) {
   let armed = true
   let lastStepAt = -Infinity
+  let top = 0
   return function feed(value, t) {
     if (!Number.isFinite(value)) return false
+    if (!armed) top = Math.max(top, value)
     if (armed && value >= peak && t - lastStepAt >= minGapMs) {
       armed = false
       lastStepAt = t
+      top = value
       return true
     }
-    if (value <= rearm) armed = true
+    if (value <= Math.max(rearm, top * relativeRearm)) armed = true
     return false
   }
 }
@@ -65,8 +70,9 @@ export function createStepDetector({ peak = 4, rearm = 2, minGapMs = MIN_GAP_MS 
 // 팔 흔들기: 휴대폰을 쥐고 달리듯 팔을 앞뒤로 흔들면 손목이 빠르게 돌았다 멈췄다 한다.
 // 자이로(회전 속도, 도/초)가 있으면 그것으로 — 앞으로 한 번, 뒤로 한 번이 각각 한 걸음(달릴 때 팔 한 번 = 발 한 번).
 // 자이로가 없는 기기는 가속도로 대신하되, 처음 흔들기보다 문턱을 낮춘다(팔 흔들기는 위아래 흔들기보다 덜 튄다).
-export const SWING_GYRO = { peak: 90, rearm: 40, minGapMs: 200 }
-export const SWING_ACCEL = { peak: 3, rearm: 1.5, minGapMs: 200 }
+export const SWING_GYRO = { peak: 60, rearm: 30, minGapMs: 0, relativeRearm: 0.5 }
+export const SWING_ACCEL = { peak: 2.5, rearm: 1.2, minGapMs: 0, relativeRearm: 0.5 }
+const SWING_MIN_GAP_MS = 230 // 회전·가속 어느 쪽이 잡든 걸음 사이 최소 간격 (초당 4번 넘게는 안 셈)
 
 function rotationMagnitude(event) {
   const r = event.rotationRate
@@ -108,6 +114,12 @@ export function createShakeRunner(start, { stride = TRIAL_STRIDE_M, onStep, moti
   let steps = 0
   let sensed = false
   let swings = 0
+  let lastSwingAt = -Infinity
+  // 최근 2초 동안 들어온 센서 값의 최댓값 — 화면에 띄워 폰마다 감도를 맞출 때 쓴다
+  let recent = { rot: 0, acc: 0, at: 0 }
+  const reading = { rot: 0, acc: 0, rate: 0 }
+  let events = 0
+  let rateFrom = null
   const gyro = createStepDetector(SWING_GYRO)
   const accel = createStepDetector(SWING_ACCEL)
   const step = () => {
@@ -115,12 +127,25 @@ export function createShakeRunner(start, { stride = TRIAL_STRIDE_M, onStep, moti
     steps += 1
     onStep?.(steps)
   }
+  // 회전(자이로)과 가속 둘 다 본다 — 어느 쪽이든 한 번 크게 튀면 한 걸음
   const onMotion = event => {
-    const t = event.timeStamp ?? Date.now()
+    const t = Date.now()
     const r = rotationMagnitude(event)
-    const m = Number.isFinite(r) ? r : motionMagnitude(event)
-    if (Number.isFinite(m)) sensed = true
-    if ((Number.isFinite(r) ? gyro : accel)(m, t)) { swings += 1; step() }
+    const a = motionMagnitude(event)
+    if (Number.isFinite(r) || Number.isFinite(a)) sensed = true
+    events += 1
+    rateFrom ??= t
+    if (t - recent.at > 2000) {
+      Object.assign(reading, { rot: recent.rot, acc: recent.acc, rate: t > rateFrom ? Math.round(events * 1000 / (t - rateFrom)) : 0 })
+      recent = { rot: 0, acc: 0, at: t }
+      events = 0
+      rateFrom = t
+    }
+    if (Number.isFinite(r)) recent.rot = Math.max(recent.rot, r)
+    if (Number.isFinite(a)) recent.acc = Math.max(recent.acc, a)
+    const hitGyro = gyro(r, t)
+    const hitAccel = accel(a, t)
+    if ((hitGyro || hitAccel) && t - lastSwingAt >= SWING_MIN_GAP_MS) { lastSwingAt = t; swings += 1; step() }
   }
   if (motion) globalThis.addEventListener?.('devicemotion', onMotion)
   return {
@@ -128,6 +153,7 @@ export function createShakeRunner(start, { stride = TRIAL_STRIDE_M, onStep, moti
     get steps() { return steps },
     get sensed() { return sensed },
     get swings() { return swings },
+    get reading() { return { ...reading } }, // 최근 2초 최대 회전(도/초)·가속(m/s²)·초당 신호 수
     // 지금까지 간 거리만큼 시작점에서 한 방향으로 옮긴 위치 — GPS 위치와 같은 모양으로
     position(now = Date.now()) {
       const p = pointAt(meters)

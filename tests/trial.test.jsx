@@ -148,7 +148,7 @@ test('arm-swing mode counts each forward/back swing from the gyro, and tapping s
   vi.setSystemTime(0)
   for (let i = 0; i < 6; i++) { motion(220); vi.advanceTimersByTime(150); motion(10); vi.advanceTimersByTime(150) }
   expect(runner.swings).toBe(6)
-  motion(60) // a gentle wobble is not a swing
+  vi.advanceTimersByTime(300); motion(40) // a gentle wobble is not a swing
   expect(runner.swings).toBe(6)
   runner.step()
   expect(runner.steps).toBe(7)
@@ -174,4 +174,24 @@ test('choosing arm swing asks for motion permission and runs on swings', async (
   }
   expect(screen.getByText(/팔을 앞뒤로! .* 9걸음/)).toBeTruthy()
   delete window.DeviceMotionEvent
+})
+
+test('arm swing still counts when the gyro never settles low between swings, or only acceleration is there', () => {
+  vi.setSystemTime(0)
+  const runner = createShakeRunner({ lat: 37.5, lon: 127 }, { motion: true })
+  const fire = props => window.dispatchEvent(Object.assign(new Event('devicemotion'), props))
+  for (let i = 0; i < 5; i++) { // 150 → 70 → 150 … never under the 30°/s re-arm line
+    fire({ rotationRate: { alpha: 150, beta: 0, gamma: 0 } }); vi.advanceTimersByTime(150)
+    fire({ rotationRate: { alpha: 70, beta: 0, gamma: 0 } }); vi.advanceTimersByTime(150)
+  }
+  expect(runner.swings).toBe(5)
+  for (let i = 0; i < 4; i++) { // no gyro, only acceleration with gravity
+    fire({ accelerationIncludingGravity: { x: 0, y: 13, z: 0 } }); vi.advanceTimersByTime(150)
+    fire({ accelerationIncludingGravity: { x: 0, y: 9.8, z: 0 } }); vi.advanceTimersByTime(150)
+  }
+  expect(runner.swings).toBe(9)
+  vi.advanceTimersByTime(2100)
+  fire({ rotationRate: { alpha: 1, beta: 0, gamma: 0 } })
+  expect(runner.reading.acc).toBeGreaterThan(3) // last 2s window: acceleration swings only
+  runner.stop()
 })
