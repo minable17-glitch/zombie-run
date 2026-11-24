@@ -13,6 +13,7 @@ const durationLabel = sec => (sec < 60 ? `${sec}초` : `${sec / 60}분`)
 export default function TrialStart({ onStart, onBack, starting, error, initial, ranking = false }) {
   const [indoor, setIndoor] = useState(initial?.indoor ?? true)
   const [seconds, setSeconds] = useState(initial?.seconds ?? DEFAULT_TRIAL_SEC)
+  const [swing, setSwing] = useState(initial?.swing ?? false)
   const [paceIdx, setPaceIdx] = useState(initial?.paceIdx ?? TRIAL_PACE_IDX)
   const [name, setName] = useState(initial?.name ?? loadTrialName())
   const [board, setBoard] = useState(null) // { key, rows | error }
@@ -34,13 +35,27 @@ export default function TrialStart({ onStart, onBack, starting, error, initial, 
         <div className="zr-trial-modes">
           <button className={indoor ? 'zr-trial-mode zr-trial-mode-on' : 'zr-trial-mode'} aria-pressed={indoor} onClick={() => setIndoor(true)}>
             <strong>👆 실내</strong>
-            <span>화면의 큰 버튼을 빠르게 연타 — 탭할수록 앞으로 달려요</span>
+            <span>제자리에서 탭하거나 팔을 흔들어 달려요</span>
           </button>
           <button className={!indoor ? 'zr-trial-mode zr-trial-mode-on' : 'zr-trial-mode'} aria-pressed={!indoor} onClick={() => setIndoor(false)}>
             <strong>🏃 실외</strong>
             <span>밖에서 진짜로 달리기 — GPS로 내 위치가 움직여요</span>
           </button>
         </div>
+
+        {indoor && <>
+          <p className="zr-pace-label">실내에서 달리는 방법</p>
+          <div className="zr-trial-modes">
+            <button className={!swing ? 'zr-trial-mode zr-trial-mode-on' : 'zr-trial-mode'} aria-pressed={!swing} onClick={() => setSwing(false)}>
+              <strong>👟 탭</strong>
+              <span>화면의 큰 버튼을 빠르게 연타 — 한 번 = 1m</span>
+            </button>
+            <button className={swing ? 'zr-trial-mode zr-trial-mode-on' : 'zr-trial-mode'} aria-pressed={swing} onClick={() => setSwing(true)}>
+              <strong>💪 팔 흔들기</strong>
+              <span>휴대폰을 쥐고 달리듯 팔을 앞뒤로 — 한 번 흔들 때 1m</span>
+            </button>
+          </div>
+        </>}
 
         <p className="zr-pace-label">버틸 시간</p>
         <div className="zr-pace-picker zr-pace-picker-3col">
@@ -65,7 +80,7 @@ export default function TrialStart({ onStart, onBack, starting, error, initial, 
         </>}
 
         {error && <p className="zr-error" role="alert">{error}</p>}
-        <button className="zr-btn zr-btn-primary" disabled={starting} onClick={() => onStart({ indoor, seconds, paceIdx, name: name.trim() })}>
+        <button className="zr-btn zr-btn-primary" disabled={starting} onClick={() => onStart({ indoor, swing: indoor && swing, seconds, paceIdx, name: name.trim() })}>
           <GameIcon name="run" size={21} />
           <span>{starting ? (indoor ? '준비 중…' : '위치 확인 중…') : '체험 시작'}</span>
         </button>
@@ -75,7 +90,7 @@ export default function TrialStart({ onStart, onBack, starting, error, initial, 
           state={board.loading ? 'saving' : ''} error={board.error} />}
         {onBack && <button className="zr-btn zr-btn-ghost" disabled={starting} onClick={onBack}>진짜 좀비런 화면으로</button>}
         {ranking && !name.trim() && <p className="zr-location-note">이름을 비우면 순위 없이 체험만 해요.</p>}
-        <p className="zr-location-note">{indoor ? '좀비가 가까이 오면 진동이 울려요 (아이폰은 진동 대신 버튼이 빨갛게 깜빡여요).' : '위치 권한이 필요해요 · 야외에서 시작해주세요.'}</p>
+        <p className="zr-location-note">{indoor ? (swing ? '아이폰은 시작할 때 "동작 및 방향" 접근을 허용해 주세요. ' : '') + '좀비가 가까이 오면 진동이 울려요 (아이폰은 진동 대신 버튼이 빨갛게 깜빡여요).' : '위치 권한이 필요해요 · 야외에서 시작해주세요.'}</p>
       </div>
     </div>
   )

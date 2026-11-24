@@ -46,22 +46,32 @@ export function isTrialEntry(locationLike = globalThis.location) {
 
 // 흔들기 = 걸음. 중력을 뺀 가속도 크기가 위로 크게 튀었다가(peak) 다시 잠잠해져야(re-arm) 한 걸음으로 친다.
 // 너무 촘촘한 신호는 손떨림·되튐이라 MIN_GAP_MS 안에선 안 센다.
-const PEAK_MPS2 = 4
-const REARM_MPS2 = 2
 const MIN_GAP_MS = 220
-export function createStepDetector() {
+export function createStepDetector({ peak = 4, rearm = 2, minGapMs = MIN_GAP_MS } = {}) {
   let armed = true
   let lastStepAt = -Infinity
-  return function feed(accelMagnitude, t) {
-    if (!Number.isFinite(accelMagnitude)) return false
-    if (armed && accelMagnitude >= PEAK_MPS2 && t - lastStepAt >= MIN_GAP_MS) {
+  return function feed(value, t) {
+    if (!Number.isFinite(value)) return false
+    if (armed && value >= peak && t - lastStepAt >= minGapMs) {
       armed = false
       lastStepAt = t
       return true
     }
-    if (accelMagnitude <= REARM_MPS2) armed = true
+    if (value <= rearm) armed = true
     return false
   }
+}
+
+// 팔 흔들기: 휴대폰을 쥐고 달리듯 팔을 앞뒤로 흔들면 손목이 빠르게 돌았다 멈췄다 한다.
+// 자이로(회전 속도, 도/초)가 있으면 그것으로 — 앞으로 한 번, 뒤로 한 번이 각각 한 걸음(달릴 때 팔 한 번 = 발 한 번).
+// 자이로가 없는 기기는 가속도로 대신하되, 처음 흔들기보다 문턱을 낮춘다(팔 흔들기는 위아래 흔들기보다 덜 튄다).
+export const SWING_GYRO = { peak: 90, rearm: 40, minGapMs: 200 }
+export const SWING_ACCEL = { peak: 3, rearm: 1.5, minGapMs: 200 }
+
+function rotationMagnitude(event) {
+  const r = event.rotationRate
+  if (r && [r.alpha, r.beta, r.gamma].every(Number.isFinite)) return Math.hypot(r.alpha, r.beta, r.gamma)
+  return NaN
 }
 
 function motionMagnitude(event) {
@@ -83,7 +93,7 @@ export async function requestMotionPermission() {
   }
 }
 
-// 탭(또는 흔들기)으로 움직이는 가상 위치. 체험 화면은 탭만 쓴다(motion: false) — 흔들기는 실제 폰에서 잘 안 잡혔다.
+// 탭(또는 팔 흔들기)으로 움직이는 가상 위치. motion 이 false 면 탭만, true 면 팔 흔들기도 걸음으로 센다(탭은 언제나 된다).
 // route 가 있으면 그 길을 따라 움직이고, 길이 끝나면 마지막 방향으로 계속 간다.
 export function createShakeRunner(start, { stride = TRIAL_STRIDE_M, onStep, motion = true, route = null } = {}) {
   const path = route && route.length > 1 ? route : null
@@ -97,22 +107,27 @@ export function createShakeRunner(start, { stride = TRIAL_STRIDE_M, onStep, moti
   let meters = 0
   let steps = 0
   let sensed = false
-  const detect = createStepDetector()
+  let swings = 0
+  const gyro = createStepDetector(SWING_GYRO)
+  const accel = createStepDetector(SWING_ACCEL)
   const step = () => {
     meters += stride
     steps += 1
     onStep?.(steps)
   }
   const onMotion = event => {
-    const m = motionMagnitude(event)
+    const t = event.timeStamp ?? Date.now()
+    const r = rotationMagnitude(event)
+    const m = Number.isFinite(r) ? r : motionMagnitude(event)
     if (Number.isFinite(m)) sensed = true
-    if (detect(m, event.timeStamp ?? Date.now())) step()
+    if ((Number.isFinite(r) ? gyro : accel)(m, t)) { swings += 1; step() }
   }
   if (motion) globalThis.addEventListener?.('devicemotion', onMotion)
   return {
     step,
     get steps() { return steps },
     get sensed() { return sensed },
+    get swings() { return swings },
     // 지금까지 간 거리만큼 시작점에서 한 방향으로 옮긴 위치 — GPS 위치와 같은 모양으로
     position(now = Date.now()) {
       const p = pointAt(meters)

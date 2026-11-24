@@ -140,3 +140,38 @@ test('the trial start screen lets you pick the zombie pace', async () => {
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: /체험 시작/ })) })
   expect(screen.getByText(/5'30"/)).toBeTruthy()
 })
+
+test('arm-swing mode counts each forward/back swing from the gyro, and tapping still works', () => {
+  const runner = createShakeRunner({ lat: 37.5, lon: 127 }, { motion: true })
+  const motion = (rate, t) => window.dispatchEvent(Object.assign(new Event('devicemotion'), {
+    rotationRate: { alpha: rate, beta: 0, gamma: 0 }, acceleration: { x: 0.5, y: 0, z: 0 } }))
+  vi.setSystemTime(0)
+  for (let i = 0; i < 6; i++) { motion(220); vi.advanceTimersByTime(150); motion(10); vi.advanceTimersByTime(150) }
+  expect(runner.swings).toBe(6)
+  motion(60) // a gentle wobble is not a swing
+  expect(runner.swings).toBe(6)
+  runner.step()
+  expect(runner.steps).toBe(7)
+  runner.stop()
+})
+
+test('choosing arm swing asks for motion permission and runs on swings', async () => {
+  const requestPermission = vi.fn(async () => 'granted')
+  window.DeviceMotionEvent = Object.assign(function () {}, { requestPermission })
+  window.history.replaceState({}, '', '/?try=1')
+  await act(async () => { render(<App />) })
+  fireEvent.click(screen.getByRole('button', { name: /팔 흔들기/ }))
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: /체험 시작/ })) })
+  expect(requestPermission).toHaveBeenCalled()
+  for (let s = 0; s < 3; s++) {
+    for (let i = 0; i < 3; i++) {
+      window.dispatchEvent(Object.assign(new Event('devicemotion'), { rotationRate: { alpha: 200, beta: 0, gamma: 0 } }))
+      vi.advanceTimersByTime(160)
+      window.dispatchEvent(Object.assign(new Event('devicemotion'), { rotationRate: { alpha: 5, beta: 0, gamma: 0 } }))
+      vi.advanceTimersByTime(160)
+    }
+    await act(async () => { vi.advanceTimersByTime(40) })
+  }
+  expect(screen.getByText(/팔을 앞뒤로! .* 9걸음/)).toBeTruthy()
+  delete window.DeviceMotionEvent
+})
