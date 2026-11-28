@@ -530,7 +530,7 @@ function GameApp() {
     // 팔 흔들기: 아이폰은 이 탭 안(다른 await 보다 먼저)에서 허락을 받아야 동작 센서를 읽는다 — 거절돼도 탭으로 달릴 수 있으니 그대로 시작
     // 거절이라고 나와도 센서가 신호를 주는 기기가 있어 듣기는 계속한다 — 신호가 없으면 게임 화면에서 탭하라고 알려 준다
     const swing = Boolean(opts.indoor && opts.swing)
-    if (swing && !(await requestMotionPermission())) toast('동작 센서 허용이 안 됐어요 · 팔 흔들기가 안 잡히면 탭으로 달려 주세요.')
+    if (swing && !(await requestMotionPermission())) toast('동작 센서 허용이 안 됐어요 · 팔 흔들기가 안 잡히면 설정에서 허용한 뒤 다시 시작해 주세요.')
     // 이름을 넣었으면 순위용 판을 서버에 연다 — 실패해도 체험은 그대로 (순위만 빠짐)
     let runId = null
     const paceIdx = opts.paceIdx ?? TRIAL_PACE_IDX
@@ -808,7 +808,7 @@ function GameApp() {
             <GameIcon name="run" size={21} />
             <span>{starting ? '위치 확인 중…' : isLocalTestMode() ? '테스트 위치로 시작' : '생존 러닝 시작'}</span>
           </button>
-          <button className="zr-btn zr-btn-ghost" disabled={starting} onClick={() => { setGeoError(''); setMode('trial') }}>로그인 없이 1분 체험 · 실내에서도 가능</button>
+          <button className="zr-btn zr-btn-ghost" disabled={starting} onClick={() => { setGeoError(''); setMode('trial') }}>로그인 없이 30초 체험 · 팔 흔들기</button>
           {supabase && <button className="zr-btn zr-btn-ghost" disabled={starting} onClick={() => { setGeoError(''); setMode('personal') }}>내 기록 · 전체 랭킹</button>}
           <p className="zr-mode-description">닉네임과 개인 코드로 나의 기록을 이어가세요. 방 없이 혼자 출발합니다.</p>
           <button className="zr-btn zr-btn-ghost" disabled={starting} onClick={() => { refreshZombieMaps(); setMode('room') }}>
@@ -1035,7 +1035,7 @@ function GameApp() {
               + (shakeRef.current?.reading ? ` · 센서 회전 ${Math.round(shakeRef.current.reading.rot)} · 가속 ${shakeRef.current.reading.acc.toFixed(1)} · ${shakeRef.current.reading.rate}/초` : '')
             : `👇 아래 큰 버튼을 빠르게 연타! 한 번 = ${TRIAL_TAP_STRIDE_M}m · ${shakeRef.current?.steps ?? 0}걸음`}</div>
           {game.trialSwing && game.elapsedSec >= 4 && !shakeRef.current?.sensed && <div role="alert" className="zr-banner zr-banner-red">
-            동작 센서 신호가 없어요 · 아래 버튼을 탭해서 달려 주세요</div>}
+            동작 센서 신호가 없어요 · 이 기기·브라우저에서는 팔 흔들기를 읽을 수 없어요</div>}
         </>}
         {!game.trial && game.zombies.length > 0 && <button className="zr-banner zr-summon-button" disabled={gpsPaused || Date.now()-game.turnaroundAt<30000} onClick={() => {
           if (turnAround(game,Date.now())) { proximityRef.current.stop(); toast('반환! 반대편에서 좀비가 다시 쫓아옵니다.'); rerender() }
@@ -1073,12 +1073,12 @@ function GameApp() {
       </div>
       {toastMsg && <div className="zr-toast" role="status" aria-live="polite">{toastMsg}</div>}
 
-      {game.trialIndoor && <button className={`zr-trial-tap${nearestZombieDist != null && nearestZombieDist <= 30 ? ' zr-trial-tap-danger' : ''}`}
-        aria-label="탭해서 달리기" onPointerDown={e => { e.preventDefault(); shakeRef.current?.step(); rerender() }}>
-        <strong>{game.trialSwing ? '💪 팔을 흔들어요!' : '👟 탭! 탭! 탭!'}</strong>
+      {/* 체험은 팔 흔들기로만 달린다 — 이 판은 좀비 거리 알림판일 뿐 눌러도 달리지 않는다 */}
+      {game.trialIndoor && <div role="status" className={`zr-trial-tap zr-trial-panel${nearestZombieDist != null && nearestZombieDist <= 30 ? ' zr-trial-tap-danger' : ''}`}>
+        <strong>💪 팔을 흔들어요!</strong>
         <span>{nearestZombieDist != null && nearestZombieDist <= 30 ? `⚠️ 좀비 ${formatDistance(nearestZombieDist)} — 더 빨리!`
-          : game.trialSwing ? '잘 안 잡히면 여기를 탭해도 달려요' : '빠르게 연타할수록 앞으로 달려요'}</span>
-      </button>}
+          : `달리듯 팔을 앞뒤로 · ${shakeRef.current?.steps ?? 0}걸음`}</span>
+      </div>}
       <RunDisplay elapsed={game.elapsedSec} distance={game.distance} nearest={nearestZombieDist} paused={gpsPaused} />
       <div className="zr-hud-bottom">
         <button className="zr-map-control" aria-label="내 위치 자동 추적" aria-pressed={follow} onClick={() => setFollow((f) => !f)}>

@@ -3,9 +3,8 @@
 import { destinationPoint, advanceAlongPath, bearingTo, haversineDistance } from './geo.js'
 import { fetchWalkingPath } from './routing.js'
 
-export const TRIAL_DURATIONS_SEC = [30, 60, 120]
-export const DEFAULT_TRIAL_SEC = 60
-export const TRIAL_PACE_IDX = 3 // 7'00"/km — 처음 해 보는 사람도 따돌릴 수 있게 가장 느린 좀비
+export const TRIAL_SECONDS = 30 // 체험은 30초 버티기 하나만
+export const TRIAL_PACE_IDX = 1 // 6'00"/km 로 시작 — 시작 화면에서 바꿀 수 있다
 export const TRIAL_STRIDE_M = 1
 // 한 번에 가는 거리 — 1m 는 너무 쉬웠다. 탭은 초당 6~8번도 쉽게 되니 0.5m, 팔 흔들기는 초당 3번 안팎이라 0.8m
 export const TRIAL_TAP_STRIDE_M = 0.5

@@ -18,6 +18,21 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); vi.useRealTimers() })
 
+// 팔 흔들기 흉내: 1초에 perSec 번, 회전 속도가 크게 튀었다가 가라앉는다
+async function swingFor(seconds, perSec = 4) {
+  const half = 1000 / perSec / 2
+  for (let s = 0; s < seconds; s++) {
+    await act(async () => {
+      for (let i = 0; i < perSec; i++) {
+        window.dispatchEvent(Object.assign(new Event('devicemotion'), { rotationRate: { alpha: 200, beta: 0, gamma: 0 } }))
+        vi.advanceTimersByTime(half)
+        window.dispatchEvent(Object.assign(new Event('devicemotion'), { rotationRate: { alpha: 5, beta: 0, gamma: 0 } }))
+        vi.advanceTimersByTime(half)
+      }
+    })
+  }
+}
+
 test('a shake counts once per peak, ignores jitter and too-close peaks', () => {
   const feed = createStepDetector()
   expect(feed(1, 0)).toBe(false) // calm
@@ -48,51 +63,42 @@ test('?try opens the trial screen directly', () => {
   expect(isTrialEntry({ search: '?test=1' })).toBe(false)
 })
 
-test('indoor trial starts without GPS, summons zombies fast, and tapping moves the runner', async () => {
+test('the trial is a 30-second arm-swing run that starts without GPS and summons zombies fast', async () => {
   await act(async () => { render(<App />) })
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: /로그인 없이 1분 체험/ })) })
-  expect(screen.getByRole('heading', { name: '좀비런 1분 체험' })).toBeTruthy()
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: /로그인 없이 30초 체험/ })) })
+  expect(screen.getByRole('heading', { name: '좀비런 30초 체험' })).toBeTruthy()
+  expect(screen.queryByRole('button', { name: /실외/ })).toBeNull() // 장소·시간·탭 선택 없음
+  expect(screen.queryByRole('button', { name: '1분' })).toBeNull()
+  expect(screen.getByRole('button', { name: /6'00"/ }).getAttribute('aria-pressed')).toBe('true') // 처음 좀비 속도 6'00"
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: /체험 시작/ })) })
   expect(navigator.geolocation.getCurrentPosition).not.toHaveBeenCalled()
   expect(screen.getByRole('meter', { name: /생명/ }).getAttribute('aria-valuemax')).toBe(String(TRIAL_GAME.maxHealth))
-  expect(screen.getByLabelText(/경과 시간/)).toBeTruthy()
-  const tap = screen.getByRole('button', { name: /탭해서 달리기/ })
-  for (let s = 0; s < 6; s++) {
-    for (let i = 0; i < 6; i++) fireEvent.pointerDown(tap)
-    await act(async () => { vi.advanceTimersByTime(1000) })
-  }
-  expect(screen.getByText(/36걸음/)).toBeTruthy()
-  expect(Number(screen.getByTestId('game-map').textContent)).toBeGreaterThan(0) // first wave at ~3s
+  expect(screen.queryByRole('button', { name: /탭해서 달리기/ })).toBeNull() // 탭으로는 못 달린다
+  await swingFor(6)
+  expect(screen.getByText(/팔을 앞뒤로! .* 24걸음/)).toBeTruthy()
+  expect(Number(screen.getByTestId('game-map').textContent)).toBeGreaterThan(0)
   expect(screen.getByLabelText(/달린 거리/).getAttribute('aria-label')).not.toBe('달린 거리 0m')
 })
 
 test('surviving the trial time ends in success and "처음으로" returns to the trial screen', async () => {
   window.history.replaceState({}, '', '/?try=1')
   await act(async () => { render(<App />) })
-  fireEvent.click(screen.getByRole('button', { name: '30초' }))
+  fireEvent.click(screen.getByRole('button', { name: /7'00"/ }))
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: /체험 시작/ })) })
-  const tap = screen.getByRole('button', { name: /탭해서 달리기/ })
-  for (let s = 0; s < 32; s++) {
-    for (let i = 0; i < 8; i++) fireEvent.pointerDown(tap) // 8 taps × 0.5m = 4m/s — outruns the 7'00" zombie
-    await act(async () => { vi.advanceTimersByTime(1000) })
-  }
+  await swingFor(32) // 4 swings × 0.8m = 3.2m/s — outruns the 7'00" zombie
   expect(screen.getByRole('heading', { name: '0:30 생존 성공!' })).toBeTruthy()
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: '처음으로' })) })
   expect(screen.getByRole('heading', { name: '좀비런 30초 체험' })).toBeTruthy()
+  expect(screen.getByRole('button', { name: /7'00"/ }).getAttribute('aria-pressed')).toBe('true') // 고른 속도 유지
 })
 
-test('indoor trial runs by tapping only, vibrates as zombies close in and hard when caught', async () => {
+test('standing still, the zombie closes in with vibration and a hard buzz when caught', async () => {
   const vibrate = vi.fn(() => true)
   Object.defineProperty(navigator, 'vibrate', { configurable: true, value: vibrate })
   window.history.replaceState({}, '', '/?try=1')
   await act(async () => { render(<App />) })
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: /체험 시작/ })) })
-  // 흔들어도 움직이지 않는다
-  for (let i = 0; i < 10; i++) {
-    window.dispatchEvent(Object.assign(new Event('devicemotion'), { acceleration: { x: 8, y: 0, z: 0 } }))
-    window.dispatchEvent(Object.assign(new Event('devicemotion'), { acceleration: { x: 0, y: 0, z: 0 } }))
-  }
-  expect(screen.getByText(/· 0걸음/)).toBeTruthy()
+  await swingFor(5) // 방향이 잡혀야 좀비가 나온다
   for (let s = 0; s < 40 && !vibrate.mock.calls.some(c => String(c[0]) === '500,120,500'); s++) {
     await act(async () => { vi.advanceTimersByTime(1000) })
   }
@@ -155,23 +161,14 @@ test('arm-swing mode counts each forward/back swing from the gyro, and tapping s
   runner.stop()
 })
 
-test('choosing arm swing asks for motion permission and runs on swings', async () => {
+test('starting the trial asks for motion permission and runs on swings', async () => {
   const requestPermission = vi.fn(async () => 'granted')
   window.DeviceMotionEvent = Object.assign(function () {}, { requestPermission })
   window.history.replaceState({}, '', '/?try=1')
   await act(async () => { render(<App />) })
-  fireEvent.click(screen.getByRole('button', { name: /팔 흔들기/ }))
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: /체험 시작/ })) })
   expect(requestPermission).toHaveBeenCalled()
-  for (let s = 0; s < 3; s++) {
-    for (let i = 0; i < 3; i++) {
-      window.dispatchEvent(Object.assign(new Event('devicemotion'), { rotationRate: { alpha: 200, beta: 0, gamma: 0 } }))
-      vi.advanceTimersByTime(160)
-      window.dispatchEvent(Object.assign(new Event('devicemotion'), { rotationRate: { alpha: 5, beta: 0, gamma: 0 } }))
-      vi.advanceTimersByTime(160)
-    }
-    await act(async () => { vi.advanceTimersByTime(40) })
-  }
+  await swingFor(3, 3)
   expect(screen.getByText(/팔을 앞뒤로! .* 9걸음/)).toBeTruthy()
   delete window.DeviceMotionEvent
 })

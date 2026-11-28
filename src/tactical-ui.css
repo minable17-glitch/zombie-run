@@ -1312,3 +1312,7 @@ button:active:not(:disabled) {
 .zr-trial-name { width: 100%; box-sizing: border-box; margin-bottom: 10px; }
 .zr-sound-picker { grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); }
 .zr-sound-picker .zr-pace-btn { font-size: 13px; }
+.zr-trial-panel { cursor: default; pointer-events: none; }
+.zr-trial-how { display: grid; gap: 4px; padding: 14px 16px; border: 1px solid #4ad8ff; border-radius: 14px; background: #0f2f3f; color: #e8f6ff; margin: 6px 0 14px; }
+.zr-trial-how strong { font: 800 18px var(--zr-display); }
+.zr-trial-how span { font-size: 13px; opacity: .9; }
